@@ -1,0 +1,10 @@
+{
+  "id": "start_fail_mod",
+  "name": "start-fail Test Mod",
+  "version": "1.0.0",
+  "description": "Failure injection test mod",
+  "authors": ["Test Author"],
+  "license": "MIT",
+  "requiredLoaderVersion": ">=0.1.0",
+  "entrypoint": "com.example.startfail.StartFailMod"
+}

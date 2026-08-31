@@ -1,0 +1,52 @@
+plugins {
+    id 'application'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+}
+
+sourceSets {
+    testmod {
+        java.srcDirs = ['src/testmod/java']
+        resources.srcDirs = ['src/testmod/resources']
+        compileClasspath += sourceSets.main.output + configurations.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+dependencies {
+    implementation project(':loader-core')
+    implementation project(':minecraft-compat')
+}
+
+tasks.register('testModJar', Jar) {
+    dependsOn tasks.named('compileTestmodJava')
+    archiveFileName.set('fv2j3-test-mod.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('libs'))
+    from(sourceSets.testmod.output)
+    includeEmptyDirs = false
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.named('testModJar')
+}
+
+tasks.named('test') {
+    dependsOn tasks.named('testModJar')
+}
+
+application {
+    mainClass = 'com.fv2j3.loader.runtime.ClientBootstrap'
+}
+
+tasks.named('run', JavaExec) {
+    ['fv2j3.test.loadingDelayMs', 'fv2j3.verification.dir', 'fv2j3.launch.target', 'fv2j3.mods.dir'].each { propertyName ->
+        def value = System.getProperty(propertyName)
+        if (value != null && !value.isBlank()) {
+            systemProperty propertyName, value
+        }
+    }
+}

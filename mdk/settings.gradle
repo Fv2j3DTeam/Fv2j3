@@ -1,0 +1,9 @@
+includeBuild("..")
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = "example-fv2j3-mod"

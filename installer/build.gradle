@@ -1,0 +1,157 @@
+plugins {
+    id 'java-library'
+    id 'com.gradleup.shadow' version '9.0.0-beta4'
+}
+
+def fv2j3Version = project.findProperty('fv2j3Version') ?: '0.1.0-SNAPSHOT'
+def fv2j3Group = project.findProperty('fv2j3Group') ?: 'com.fv2j3'
+
+group = fv2j3Group
+version = fv2j3Version
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+    sourceCompatibility = JavaVersion.VERSION_26
+    targetCompatibility = JavaVersion.VERSION_26
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':loader-api')
+    implementation project(':loader-core')
+    implementation project(':loader-runtime')
+    implementation project(':minecraft-compat')
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.17.2'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.17.2'
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.16'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 26
+}
+
+tasks.register('collectRuntimeJars', Copy) {
+    group = 'build'
+    description = 'Collects Fv2j3 runtime JARs into resources for embedding.'
+
+    def targetDir = file("${project.buildDir}/tmp/fv2j3-runtime")
+
+    dependsOn ':loader-api:jar', ':loader-core:jar', ':loader-runtime:jar', ':minecraft-compat:jar'
+
+    doFirst {
+        targetDir.mkdirs()
+        delete(targetDir)
+    }
+
+    into targetDir
+    from(project(':loader-api').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
+    from(project(':loader-core').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
+    from(project(':loader-runtime').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
+    from(project(':minecraft-compat').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
+
+    doLast {
+        def cacheDir = new File(System.getProperty('user.home'), '.gradle/caches/modules-2/files-2.1')
+        def jacksonJars = [
+            [name: 'jackson-databind', actualName: 'jackson-databind'],
+            [name: 'jackson-core', actualName: 'jackson-core'],
+            [name: 'jackson-annotations', actualName: 'jackson-annotations']
+        ]
+        jacksonJars.each { jar ->
+            def found = findInCache(cacheDir, jar.name)
+            if (found) {
+                copy {
+                    from found
+                    into new File(targetDir, 'libs')
+                    rename { jar.actualName + '.jar' }
+                }
+            }
+        }
+        def asmFound = findInCache(cacheDir, 'asm')
+        if (asmFound) {
+            copy {
+                from asmFound
+                into new File(targetDir, 'libs')
+                rename { 'asm.jar' }
+            }
+        }
+    }
+}
+
+def findInCache(File baseDir, String artifactName) {
+    if (!baseDir.exists()) return null
+    def foundFiles = []
+    def stack = [baseDir]
+    while (!stack.isEmpty()) {
+        def current = stack.pop()
+        if (current.isDirectory()) {
+            def children = current.listFiles()
+            if (children != null) {
+                stack.addAll(children)
+            }
+        } else if (current.name.startsWith(artifactName + '-') && current.name.endsWith('.jar')) {
+            foundFiles << current
+        }
+    }
+    if (foundFiles.isEmpty()) return null
+    return foundFiles.max { it.lastModified() }
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs = [file("${project.buildDir}/tmp/fv2j3-runtime")]
+        }
+    }
+}
+
+shadowJar {
+    archiveFileName.set('Fv2j3-Installer.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('libs'))
+    mergeServiceFiles()
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    manifest {
+        attributes(
+            'Main-Class': 'com.fv2j3.installer.InstallerMain',
+            'Implementation-Title': 'Fv2j3 Installer',
+            'Implementation-Version': version,
+            'Implementation-Vendor': 'Fv2j3',
+            'Specification-Title': 'Fv2j3 Installer',
+            'Specification-Version': version,
+            'Build-Java': System.getProperty('java.version', 'unknown')
+        )
+    }
+}
+
+jar {
+    enabled = false
+}
+
+tasks.named('processResources') {
+    dependsOn collectRuntimeJars
+}
+
+tasks.named('assemble') {
+    dependsOn shadowJar
+}
+
+tasks.register('selfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the installer self-test.'
+
+    dependsOn shadowJar
+
+    classpath = files(tasks.named('shadowJar').get().archiveFile.get().asFile)
+    mainClass = 'com.fv2j3.installer.InstallerMain'
+    args = ['--self-test']
+    ignoreExitValue = false
+}

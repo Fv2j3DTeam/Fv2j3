@@ -1,0 +1,548 @@
+import groovy.json.JsonSlurper
+import java.nio.file.Files
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.zip.ZipFile
+
+ext {
+    minecraftVersion = '1.12.2'
+    minecraftManifestUrl = 'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json'
+    minecraftRuntimeHome = providers.gradleProperty('fv2j3.minecraft.home')
+            .orElse(providers.systemProperty('fv2j3.minecraft.home'))
+            .orElse(providers.provider { new File(rootDir, 'build/minecraft-runtime').absolutePath })
+    fv2j3Group = 'com.fv2j3'
+    fv2j3Version = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    group = 'com.fv2j3'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(26)
+        }
+        sourceCompatibility = JavaVersion.VERSION_26
+        targetCompatibility = JavaVersion.VERSION_26
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 26
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    dependencies {
+        implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+        testImplementation platform('org.junit:junit-bom:5.10.2')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+}
+
+def sha1For = { File file ->
+    if (!file.exists()) {
+        throw new GradleException("Requested SHA-1 for missing file: ${file}")
+    }
+    def digest = MessageDigest.getInstance('SHA-1')
+    file.eachByte(8192) { byte[] buffer, int count ->
+        digest.update(buffer, 0, count)
+    }
+    return digest.digest().encodeHex().toString()
+}
+
+def downloadFile = { String url, File target, String expectedSha1 = null ->
+    if (!target.parentFile.exists()) {
+        target.parentFile.mkdirs()
+    }
+    if (target.exists() && expectedSha1 && sha1For(target).equalsIgnoreCase(expectedSha1)) {
+        return
+    }
+    def connection = new URL(url).openConnection()
+    connection.setRequestProperty('User-Agent', 'Fv2j3/1.0 Gradle runtime setup')
+    connection.connect()
+    def input = connection.getInputStream()
+    try {
+        target.withOutputStream { out ->
+            out << input
+        }
+    } finally {
+        input.close()
+    }
+    if (expectedSha1) {
+        def actualSha1 = sha1For(target)
+        if (!actualSha1.equalsIgnoreCase(expectedSha1)) {
+            target.delete()
+            throw new GradleException("Checksum mismatch for ${target}: expected ${expectedSha1} but found ${actualSha1}")
+        }
+    }
+}
+
+def extractZip = { File zipFile, File destination ->
+    if (!zipFile.exists()) {
+        throw new GradleException("Native archive missing: ${zipFile}")
+    }
+    destination.mkdirs()
+    def zip = new ZipFile(zipFile)
+    try {
+        zip.entries().each { entry ->
+            if (entry.directory) {
+                return
+            }
+            def extracted = new File(destination, entry.name)
+            extracted.parentFile?.mkdirs()
+            extracted.withOutputStream { output ->
+                output << zip.getInputStream(entry)
+            }
+        }
+    } finally {
+        zip.close()
+    }
+}
+
+def libraryAllowed = { Map lib ->
+    def rules = lib?.rules
+    if (!rules) {
+        return true
+    }
+    def current = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+    def matched = false
+    def allowed = true
+    for (rule in rules) {
+        def os = rule.os
+        if (!os) {
+            continue
+        }
+        def key = os.name?.toLowerCase(Locale.ROOT)
+        if (key && current.contains(key)) {
+            matched = true
+            allowed = 'allow'.equals(rule.action)
+            break
+        }
+    }
+    return !matched || allowed
+}
+
+def nativeClassifierForCurrentPlatform = {
+    def os = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+    def arch = System.getProperty('os.arch', '').toLowerCase(Locale.ROOT)
+    if (os.contains('win')) {
+        return 'natives-windows'
+    }
+    if (os.contains('mac')) {
+        return 'natives-osx'
+    }
+    if (os.contains('linux')) {
+        return arch.contains('64') ? 'natives-linux' : 'natives-linux'
+    }
+    return 'natives-linux'
+}
+
+tasks.register('prepareMinecraftRuntime') {
+    group = 'build'
+    description = 'Downloads and prepares the official vanilla Minecraft 1.12.2 runtime.'
+
+    doLast {
+        def home = file(minecraftRuntimeHome.get())
+        def versionDir = new File(home, "versions/${minecraftVersion}")
+        versionDir.mkdirs()
+
+        def manifest = new JsonSlurper().parse(new URL(minecraftManifestUrl).openStream())
+        def versionEntry = manifest.versions.find { it.id == minecraftVersion }
+        if (!versionEntry) {
+            throw new GradleException("Official Minecraft version ${minecraftVersion} was not found in the Mojang version manifest.")
+        }
+
+        def versionJsonFile = new File(versionDir, "${minecraftVersion}.json")
+        downloadFile(versionEntry.url, versionJsonFile)
+        def versionJson = new JsonSlurper().parse(versionJsonFile)
+
+        def clientDownload = versionJson.downloads?.client
+        if (!clientDownload?.url) {
+            throw new GradleException("Minecraft 1.12.2 client download metadata is missing from the official version JSON.")
+        }
+        def clientJar = new File(versionDir, "${minecraftVersion}.jar")
+        downloadFile(clientDownload.url, clientJar, clientDownload.sha1)
+
+        def serverDownload = versionJson.downloads?.server
+        if (serverDownload?.url) {
+            def serverJar = new File(versionDir, "minecraft_server.jar")
+            downloadFile(serverDownload.url, serverJar, serverDownload.sha1)
+        }
+
+        def librariesDir = new File(home, 'libraries')
+        librariesDir.mkdirs()
+        for (lib in versionJson.libraries ?: []) {
+            if (!libraryAllowed(lib)) {
+                continue
+            }
+            def artifact = lib.downloads?.artifact
+            if (artifact?.url) {
+                def path = artifact.path ?: new File(new URL(artifact.url).path).name
+                def localFile = new File(home, path)
+                localFile.parentFile?.mkdirs()
+                downloadFile(artifact.url, localFile, artifact.sha1)
+            }
+            def classifier = nativeClassifierForCurrentPlatform()
+            def nativeArtifact = lib.downloads?.classifiers?[(classifier)]
+            if (nativeArtifact?.url) {
+                def localFile = new File(home, nativeArtifact.path)
+                localFile.parentFile?.mkdirs()
+                downloadFile(nativeArtifact.url, localFile, nativeArtifact.sha1)
+                if (localFile.name.endsWith('.zip') || localFile.name.endsWith('.jar')) {
+                    def nativesDir = new File(home, "versions/${minecraftVersion}/natives")
+                    extractZip(localFile, nativesDir)
+                }
+            }
+        }
+
+        def assetIndex = versionJson.assetIndex
+        if (assetIndex?.url) {
+            def assetIndexFile = new File(home, "assets/indexes/${assetIndex.id}.json")
+            assetIndexFile.parentFile.mkdirs()
+            downloadFile(assetIndex.url, assetIndexFile, assetIndex.sha1)
+        }
+
+        logger.lifecycle("Prepared official vanilla Minecraft 1.12.2 runtime at ${home}")
+    }
+}
+
+tasks.withType(JavaExec).configureEach {
+    def configuredHome = minecraftRuntimeHome.orNull
+    if (configuredHome != null && !configuredHome.trim().isEmpty()) {
+        systemProperty 'fv2j3.minecraft.home', configuredHome
+    }
+    def loadingDelay = providers.systemProperty('fv2j3.test.loadingDelayMs').orNull
+    if (loadingDelay != null && !loadingDelay.trim().isEmpty()) {
+        systemProperty 'fv2j3.test.loadingDelayMs', loadingDelay
+    }
+    def verificationDirectory = providers.systemProperty('fv2j3.verification.dir').orNull
+    if (verificationDirectory != null && !verificationDirectory.trim().isEmpty()) {
+        systemProperty 'fv2j3.verification.dir', verificationDirectory
+    }
+}
+
+ext.bootstrapClasspathFiles = { ->
+    def classpathFiles = []
+    classpathFiles << project(':loader-runtime').layout.buildDirectory.file('libs/loader-runtime-0.1.0-SNAPSHOT.jar').get().asFile
+    classpathFiles << project(':loader-core').layout.buildDirectory.file('libs/loader-core-0.1.0-SNAPSHOT.jar').get().asFile
+    classpathFiles << project(':loader-api').layout.buildDirectory.file('libs/loader-api-0.1.0-SNAPSHOT.jar').get().asFile
+    classpathFiles << project(':minecraft-compat').layout.buildDirectory.file('libs/minecraft-compat-0.1.0-SNAPSHOT.jar').get().asFile
+
+    def gradleUserHome = gradle.gradleUserHomeDir
+    def jacksonDatabind = file("${gradleUserHome}/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-databind/2.17.2/e6deb029e5901e027c129341fac39e515066b68c/jackson-databind-2.17.2.jar")
+    def jacksonCore = file("${gradleUserHome}/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-core/2.17.2/969a35cb35c86512acbadcdbbbfb044c877db814/jackson-core-2.17.2.jar")
+    def jacksonAnnotations = file("${gradleUserHome}/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-annotations/2.17.2/147b7b9412ffff24339f8aba080b292448e08698/jackson-annotations-2.17.2.jar")
+    def asmJar = file("${gradleUserHome}/caches/modules-2/files-2.1/org.ow2.asm/asm/9.8/dc19ecb3f7889b7860697215cae99c0f9b6f6b4b/asm-9.8.jar")
+
+    if (jacksonDatabind.exists()) classpathFiles << jacksonDatabind
+    if (jacksonCore.exists()) classpathFiles << jacksonCore
+    if (jacksonAnnotations.exists()) classpathFiles << jacksonAnnotations
+    if (asmJar.exists()) classpathFiles << asmJar
+
+    return classpathFiles.findAll { it.exists() }
+}
+
+tasks.register('runClient', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Launches the real Minecraft 1.12.2 Client with Fv2j3 loader. Uses runs/client as game directory.'
+
+    dependsOn ':loader-runtime:assemble', ':loader-runtime:testModJar', 'prepareMinecraftRuntime'
+
+    doFirst {
+        def runtimeHome = file(minecraftRuntimeHome.get())
+        def runDir = file("${rootDir}/runs/client")
+        def modsDir = file("${runDir}/mods")
+        def verificationDir = file("${rootDir}/build/fv2j3-verification")
+        runDir.mkdirs()
+        modsDir.mkdirs()
+        verificationDir.mkdirs()
+        def testModJar = project(':loader-runtime').layout.buildDirectory.file('libs/fv2j3-test-mod.jar').get().asFile
+        if (testModJar.exists()) {
+            copy {
+                from testModJar
+                into modsDir
+            }
+        }
+        systemProperty 'fv2j3.minecraft.home', runtimeHome.absolutePath
+        systemProperty 'fv2j3.verification.dir', verificationDir.absolutePath
+        systemProperty 'fv2j3.launch.target', 'client'
+        systemProperty 'fv2j3.mods.dir', modsDir.absolutePath
+        workingDir = runDir
+        def bootstrapCp = bootstrapClasspathFiles()
+        if (bootstrapClasspathFiles().isEmpty()) {
+            throw new GradleException("Bootstrap classpath is empty! JARs not found. Check that loader modules have been built.")
+        }
+        classpath = files(bootstrapCp)
+        mainClass = 'com.fv2j3.loader.runtime.ClientBootstrap'
+        args = ["--mods=${modsDir.absolutePath}", "--minecraft-home=${runtimeHome.absolutePath}"]
+        standardInput = System.in
+        ignoreExitValue = true
+        logger.lifecycle('Launching Minecraft 1.12.2 Client with Fv2j3...')
+        logger.lifecycle("Minecraft home: ${runtimeHome.absolutePath}")
+        logger.lifecycle("Run directory: ${runDir.absolutePath}")
+        logger.lifecycle("Mods directory: ${modsDir.absolutePath}")
+        logger.lifecycle("Verification directory: ${verificationDir.absolutePath}")
+    }
+}
+
+tasks.register('runServer', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Launches the real Minecraft 1.12.2 Dedicated Server with Fv2j3 loader. Uses runs/server as game directory.'
+
+    dependsOn ':loader-runtime:assemble', ':loader-runtime:testModJar', 'prepareMinecraftRuntime'
+
+    doFirst {
+        def runtimeHome = file(minecraftRuntimeHome.get())
+        def runDir = file("${rootDir}/runs/server")
+        def modsDir = file("${runDir}/mods")
+        def verificationDir = file("${rootDir}/build/fv2j3-server-verification")
+        runDir.mkdirs()
+        modsDir.mkdirs()
+        verificationDir.mkdirs()
+        def testModJar = project(':loader-runtime').layout.buildDirectory.file('libs/fv2j3-test-mod.jar').get().asFile
+        if (testModJar.exists()) {
+            copy {
+                from testModJar
+                into modsDir
+            }
+        }
+        systemProperty 'fv2j3.minecraft.home', runtimeHome.absolutePath
+        systemProperty 'fv2j3.verification.dir', verificationDir.absolutePath
+        systemProperty 'fv2j3.launch.target', 'dedicated_server'
+        systemProperty 'fv2j3.mods.dir', modsDir.absolutePath
+        workingDir = runDir
+        classpath = files(bootstrapClasspathFiles())
+        mainClass = 'com.fv2j3.loader.runtime.ServerBootstrap'
+        args = ["--mods=${modsDir.absolutePath}", "--minecraft-home=${runtimeHome.absolutePath}", "nogui"]
+        standardInput = System.in
+        ignoreExitValue = true
+        logger.lifecycle('Launching Minecraft 1.12.2 Dedicated Server with Fv2j3...')
+        logger.lifecycle("Minecraft home: ${runtimeHome.absolutePath}")
+        logger.lifecycle("Run directory: ${runDir.absolutePath}")
+        logger.lifecycle("Mods directory: ${modsDir.absolutePath}")
+        logger.lifecycle("Verification directory: ${verificationDir.absolutePath}")
+    }
+}
+
+tasks.register('generateStressMods', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Generates 300+ real-content test mods for stress testing.'
+
+    dependsOn ':loader-runtime:assemble', ':loader-core:assemble', ':loader-api:assemble', ':minecraft-compat:assemble'
+
+    classpath = files(bootstrapClasspathFiles())
+    mainClass = 'com.fv2j3.loader.runtime.StressModGenerator'
+
+    def stressOutputDir = file("${rootDir}/build/stress-mods")
+    def stressJarsDir = file("${rootDir}/build/stress-jars")
+
+    doFirst {
+        stressOutputDir.mkdirs()
+        stressJarsDir.mkdirs()
+    }
+
+    args = [
+        stressOutputDir.absolutePath,
+        stressJarsDir.absolutePath,
+        project(':loader-api').layout.buildDirectory.file('libs/loader-api-0.1.0-SNAPSHOT.jar').get().asFile.absolutePath
+    ]
+
+    doLast {
+        logger.lifecycle("Generated stress mods at ${stressJarsDir}")
+    }
+}
+
+tasks.register('stressTestClient', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Runs the REAL 300 mod stress test through production Fv2j3 loader with actual Minecraft 1.12.2 Client launch.'
+
+    dependsOn 'generateStressMods', ':loader-runtime:assemble', ':loader-core:assemble', ':loader-api:assemble', ':minecraft-compat:assemble', 'prepareMinecraftRuntime'
+
+    doFirst {
+        def stressJarsDir = file("${rootDir}/build/stress-jars")
+        def stressReport = file("${rootDir}/build/stress-report-client.txt")
+        def mcHome = minecraftRuntimeHome.get()
+        def runDir = file("${rootDir}/runs/stress-client")
+        def modsDir = file("${runDir}/mods")
+        def verificationDir = file("${rootDir}/build/stress-client-verification")
+        stressJarsDir.mkdirs()
+        runDir.mkdirs()
+        modsDir.mkdirs()
+        verificationDir.mkdirs()
+        systemProperty 'fv2j3.launch.target', 'client'
+        systemProperty 'fv2j3.minecraft.home', mcHome
+        systemProperty 'fv2j3.verification.dir', verificationDir.absolutePath
+        systemProperty 'fv2j3.stress.run.dir', runDir.absolutePath
+        systemProperty 'fv2j3.stress.mods.dir', modsDir.absolutePath
+        classpath = files(bootstrapClasspathFiles())
+        mainClass = 'com.fv2j3.loader.runtime.StressTestRunner'
+        args = [
+            stressJarsDir.absolutePath,
+            stressReport.absolutePath,
+            mcHome,
+            runDir.absolutePath,
+            verificationDir.absolutePath,
+            'client'
+        ]
+        ignoreExitValue = false
+    }
+}
+
+tasks.register('stressTestServer', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Runs the REAL 300 mod stress test through production Fv2j3 loader with actual Minecraft 1.12.2 Dedicated Server launch.'
+
+    dependsOn 'generateStressMods', ':loader-runtime:assemble', ':loader-core:assemble', ':loader-api:assemble', ':minecraft-compat:assemble', 'prepareMinecraftRuntime'
+
+    doFirst {
+        def stressJarsDir = file("${rootDir}/build/stress-jars")
+        def stressReport = file("${rootDir}/build/stress-report-server.txt")
+        def mcHome = minecraftRuntimeHome.get()
+        def runDir = file("${rootDir}/runs/stress-server")
+        def modsDir = file("${runDir}/mods")
+        def verificationDir = file("${rootDir}/build/stress-server-verification")
+        stressJarsDir.mkdirs()
+        runDir.mkdirs()
+        modsDir.mkdirs()
+        verificationDir.mkdirs()
+        systemProperty 'fv2j3.launch.target', 'dedicated_server'
+        systemProperty 'fv2j3.minecraft.home', mcHome
+        systemProperty 'fv2j3.verification.dir', verificationDir.absolutePath
+        systemProperty 'fv2j3.stress.run.dir', runDir.absolutePath
+        systemProperty 'fv2j3.stress.mods.dir', modsDir.absolutePath
+        classpath = files(bootstrapClasspathFiles())
+        mainClass = 'com.fv2j3.loader.runtime.StressTestRunner'
+        args = [
+            stressJarsDir.absolutePath,
+            stressReport.absolutePath,
+            mcHome,
+            runDir.absolutePath,
+            verificationDir.absolutePath,
+            'server'
+        ]
+        ignoreExitValue = false
+    }
+}
+
+tasks.register('stressTest') {
+    group = 'Fv2j3'
+    description = 'Alias for stressTestClient (backward compatibility).'
+    dependsOn tasks.named('stressTestClient')
+}
+
+tasks.register('generateDocumentation', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Generates Fv2j3 technical documentation.'
+
+    dependsOn ':loader-api:assemble'
+
+    def classpathFiles = []
+    classpathFiles << project(':loader-api').layout.buildDirectory.file('libs/loader-api-0.1.0-SNAPSHOT.jar').get().asFile
+    classpathFiles << project(':loader-core').layout.buildDirectory.file('libs/loader-core-0.1.0-SNAPSHOT.jar').get().asFile
+
+    classpath = files(classpathFiles.findAll { it.exists() })
+    mainClass = 'com.fv2j3.loader.core.DocumentationGenerator'
+
+    def docsDir = file("${rootDir}/build/docs")
+    doFirst { docsDir.mkdirs() }
+    args = [docsDir.absolutePath]
+}
+
+tasks.register('generateTutorial', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Generates Fv2j3 tutorial/teaching material.'
+
+    dependsOn ':loader-api:assemble'
+
+    def classpathFiles = []
+    classpathFiles << project(':loader-api').layout.buildDirectory.file('libs/loader-api-0.1.0-SNAPSHOT.jar').get().asFile
+    classpathFiles << project(':loader-core').layout.buildDirectory.file('libs/loader-core-0.1.0-SNAPSHOT.jar').get().asFile
+
+    classpath = files(classpathFiles.findAll { it.exists() })
+    mainClass = 'com.fv2j3.loader.core.TutorialGenerator'
+
+    def tutorialDir = file("${rootDir}/build/tutorial")
+    doFirst { tutorialDir.mkdirs() }
+    args = [tutorialDir.absolutePath]
+}
+
+tasks.register('testMdk') {
+    group = 'Fv2j3'
+    description = 'Tests the MDK fresh build.'
+
+    dependsOn ':loader-api:assemble'
+    doLast {
+        def mdkDir = file("${rootDir}/mdk")
+        if (!mdkDir.exists()) {
+            throw new GradleException("MDK directory not found: ${mdkDir}")
+        }
+        def gradlew = new File(mdkDir, 'gradlew')
+        if (!gradlew.exists()) {
+            throw new GradleException("MDK gradlew not found: ${gradlew}")
+        }
+        def gradleWrapperJar = new File(mdkDir, 'gradle/wrapper/gradle-wrapper.jar')
+        if (!gradleWrapperJar.exists()) {
+            throw new GradleException("MDK gradle-wrapper.jar not found: ${mdkDir}")
+        }
+        def exampleMod = new File(mdkDir, 'src/main/java/com/example/mod/ExampleMod.java')
+        if (!exampleMod.exists()) {
+            throw new GradleException("MDK example mod not found: ${mdkDir}")
+        }
+        def metadata = new File(mdkDir, 'src/main/resources/META-INF/fv2j3.mod.json')
+        if (!metadata.exists()) {
+            throw new GradleException("MDK metadata not found: ${mdkDir}")
+        }
+        logger.lifecycle("MDK structure verified at ${mdkDir}")
+        logger.lifecycle("gradlew: present")
+        logger.lifecycle("gradlew.bat: " + (new File(mdkDir, 'gradlew.bat').exists() ? "present" : "MISSING"))
+        logger.lifecycle("gradle-wrapper.jar: present")
+        logger.lifecycle("Example mod: present")
+    }
+}
+
+tasks.register('buildInstaller', JavaExec) {
+    group = 'Fv2j3'
+    description = 'Builds the self-contained Fv2j3-Installer.jar (Fat JAR with all Fv2j3 runtime libraries embedded).'
+
+    dependsOn ':loader-api:assemble', ':loader-core:assemble', ':loader-runtime:assemble', ':minecraft-compat:assemble', 'prepareMinecraftRuntime'
+
+    def distributionsDir = file("${rootDir}/build/distributions")
+    def shadowJar = file("${rootDir}/installer/build/libs/Fv2j3-Installer.jar")
+
+    doFirst {
+        distributionsDir.mkdirs()
+    }
+
+    workingDir = file("${rootDir}/installer")
+    executable = 'bash'
+    args = ['-c', """
+        cd "${rootDir}/installer" && "${rootDir}/gradlew" --no-daemon -Pfv2j3Version=${fv2j3Version} -Pfv2j3Group=${fv2j3Group} shadowJar
+    """]
+
+    ignoreExitValue = true
+
+    doLast {
+        if (!shadowJar.exists()) {
+            throw new GradleException("Installer build failed: ${shadowJar} not found.")
+        }
+        def target = new File(distributionsDir, "Fv2j3-Installer.jar")
+        target.bytes = shadowJar.bytes
+        logger.lifecycle("")
+        logger.lifecycle("BUILD SUCCESSFUL")
+        logger.lifecycle("")
+        logger.lifecycle("Fv2j3 Installer:")
+        logger.lifecycle("  ${target.absolutePath}")
+        logger.lifecycle("")
+    }
+}

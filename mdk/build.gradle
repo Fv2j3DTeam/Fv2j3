@@ -1,0 +1,25 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.fv2j3:loader-api:0.1.0-SNAPSHOT'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 26
+    options.encoding = 'UTF-8'
+}

@@ -1,0 +1,10 @@
+{
+  "id": "fv2j3_test_mod",
+  "name": "Fv2j3 Test Mod",
+  "version": "1.0.0",
+  "description": "Minimal runtime validation mod for Fv2j3.",
+  "authors": ["Fv2j3"],
+  "license": "MIT",
+  "requiredLoaderVersion": ">=0.1.0",
+  "entrypoint": "com.fv2j3test.Fv2j3TestMod"
+}

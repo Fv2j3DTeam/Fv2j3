@@ -1,0 +1,179 @@
+plugins {
+    id 'java-library'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+def fv2j3Version = project.findProperty('fv2j3Version') ?: '0.1.0-SNAPSHOT'
+def fv2j3Group = project.findProperty('fv2j3Group') ?: 'com.fv2j3'
+
+group = fv2j3Group
+version = fv2j3Version
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+    sourceCompatibility = JavaVersion.VERSION_26
+    targetCompatibility = JavaVersion.VERSION_26
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':loader-api')
+    implementation project(':loader-core')
+    implementation project(':loader-runtime')
+    implementation project(':minecraft-compat')
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.17.2'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.17.2'
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.16'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 26
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs = ['src/main/resources']
+            excludes = ['fv2j3-runtime/**']
+        }
+    }
+}
+
+tasks.register('embedRuntime', Copy) {
+    group = 'build'
+    description = 'Copies Fv2j3 runtime JARs into resources for embedding in the installer.'
+
+    def runtimeDir = project.rootProject.layout.buildDirectory.dir('runtime-jars').get().asFile
+    def targetDir = file("${project.buildDir}/tmp/embedded-runtime")
+
+    dependsOn [
+        ':loader-api:assemble',
+        ':loader-core:assemble',
+        ':loader-runtime:assemble',
+        ':minecraft-compat:assemble'
+    ]
+
+    doFirst {
+        targetDir.mkdirs()
+        delete(targetDir)
+    }
+
+    from(project(':loader-api').layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        into 'loader-api'
+        rename { 'loader-api.jar' }
+    }
+    from(project(':loader-core').layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        into 'loader-core'
+        rename { 'loader-core.jar' }
+    }
+    from(project(':loader-runtime').layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        into 'loader-runtime'
+        rename { 'loader-runtime.jar' }
+    }
+    from(project(':minecraft-compat').layout.buildDirectory.dir('libs')) {
+        include '*.jar'
+        into 'minecraft-compat'
+        rename { 'minecraft-compat.jar' }
+    }
+
+    doLast {
+        def gradleCache = new File(System.getProperty('user.home'), '.gradle/caches/modules-2/files-2.1')
+        def jacksonDir = new File(gradleCache, 'com.fasterxml.jackson.core')
+        def jacksonJars = [
+            'jackson-databind',
+            'jackson-core',
+            'jackson-annotations'
+        ]
+        jacksonJars.each { name ->
+            def jar = findJar(gradleCache, "com.fasterxml.jackson.core:${name}:")
+            if (jar) {
+                copy {
+                    from jar
+                    into targetDir
+                    rename { 'jackson-' + name.replace('jackson-', '') + '.jar' }
+                }
+            }
+        }
+        def asmDir = new File(gradleCache, 'org.ow2.asm')
+        def asmJar = findJar(gradleCache, 'org.ow2.asm:asm:')
+        if (asmJar) {
+            copy {
+                from asmJar
+                into targetDir
+                rename { 'asm.jar' }
+            }
+        }
+    }
+
+    into targetDir
+}
+
+def findJar(File baseDir, String prefix) {
+    if (!baseDir.exists()) return null
+    return baseDir.walkTopDown()
+            .filter { it.name.endsWith('.jar') && it.name.startsWith(prefix.split(':')[1]) }
+            .firstOrNull()
+}
+
+tasks.named('compileJava') {
+    dependsOn embedRuntime
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs = [embedRuntime.map { it.destinationDir }]
+        }
+    }
+}
+
+shadowJar {
+    archiveFileName.set('Fv2j3-Installer.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('libs'))
+    mergeServiceFiles()
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    manifest {
+        attributes(
+            'Main-Class': 'com.fv2j3.installer.InstallerMain',
+            'Implementation-Title': 'Fv2j3 Installer',
+            'Implementation-Version': version,
+            'Implementation-Vendor': 'Fv2j3',
+            'Specification-Title': 'Fv2j3 Installer',
+            'Specification-Version': version,
+            'Build-Java': System.getProperty('java.version', 'unknown')
+        )
+    }
+}
+
+jar {
+    enabled = false
+}
+
+tasks.named('assemble') {
+    dependsOn shadowJar
+}
+
+tasks.register('selfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the installer self-test.'
+
+    dependsOn shadowJar
+
+    classpath = files(tasks.named('shadowJar').get().archiveFile.get().asFile)
+    mainClass = 'com.fv2j3.installer.InstallerMain'
+    args = ['--self-test']
+    ignoreExitValue = false
+}

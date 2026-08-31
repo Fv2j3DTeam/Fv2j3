@@ -1,0 +1,10 @@
+{
+  "id": "example",
+  "name": "Example Mod",
+  "version": "1.0.0",
+  "description": "Example Fv2j3 mod built with the MDK.",
+  "authors": ["Example"],
+  "license": "MIT",
+  "requiredLoaderVersion": ">=0.1.0",
+  "entrypoint": "com.example.mod.ExampleMod"
+}
