@@ -10,6 +10,7 @@ java {
 
 dependencies {
     testImplementation project(':minecraft-compat')
+    testImplementation project(':loader-runtime')
 }
 
 dependencies {

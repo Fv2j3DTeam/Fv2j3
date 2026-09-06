@@ -2,6 +2,7 @@ package com.fv2j3.loader.core;
 
 import com.fv2j3.api.ModDependency;
 import com.fv2j3.api.ModDescriptor;
+import com.fv2j3.api.ModSide;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,6 +69,7 @@ public final class ModMetadataParser {
         List<ModDependency> optionalDependencies = parseDependencies(root, "optionalDependencies", true);
         String requiredLoaderVersion = textOrDefault(root, "requiredLoaderVersion", ">=0.1.0");
         String entrypoint = requiredText(root, "entrypoint");
+        ModSide side = ModSide.fromString(textOrDefault(root, "side", "both"));
 
         return new ModDescriptor(
                 id,
@@ -79,7 +81,8 @@ public final class ModMetadataParser {
                 dependencies,
                 optionalDependencies,
                 requiredLoaderVersion,
-                entrypoint
+                entrypoint,
+                side
         );
     }
 

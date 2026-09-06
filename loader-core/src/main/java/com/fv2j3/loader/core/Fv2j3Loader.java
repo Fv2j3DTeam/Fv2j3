@@ -2,6 +2,7 @@ package com.fv2j3.loader.core;
 
 import com.fv2j3.api.ModLoadingProgress;
 import com.fv2j3.api.ModRuntimeState;
+import com.fv2j3.api.ModSide;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -19,6 +20,7 @@ public final class Fv2j3Loader {
     private final LoaderLogger logger;
     private LoaderContext context;
     private LoaderState state;
+    private Path configDirectory;
     private Consumer<ModLoadingProgress> progressListener = ignored -> { };
 
     public Fv2j3Loader(LoaderEnvironment environment) {
@@ -48,6 +50,18 @@ public final class Fv2j3Loader {
         this.progressListener = progressListener == null ? ignored -> { } : progressListener;
     }
 
+    /**
+     * Sets the directory where per-mod {@code Fv2j3Config} files live.
+     * Defaults to {@code <modDirectory>/../config} when unset.
+     */
+    public void setConfigDirectory(Path configDirectory) {
+        this.configDirectory = configDirectory;
+    }
+
+    public Path configDirectory() {
+        return configDirectory;
+    }
+
     public void initialize() throws LoaderInitializationException {
         initialize(defaultModDirectory());
     }
@@ -75,6 +89,18 @@ public final class Fv2j3Loader {
                     Map.of("mods.directory", modDirectory == null ? "" : modDirectory.toString()),
                     sources
             );
+
+            // Per-mod config dir. Default: <modDirectory>/../config.
+            if (this.configDirectory == null && modDirectory != null) {
+                Path parent = modDirectory.toAbsolutePath().getParent();
+                if (parent != null) {
+                    this.configDirectory = parent.resolve("config");
+                }
+            }
+            if (this.configDirectory != null) {
+                this.context.setConfigProvider(new ModConfigRegistry(this.configDirectory));
+                logger.info("Mod config directory: " + this.configDirectory.toAbsolutePath());
+            }
 
             discoverAndRegisterSources(sources);
             progress("validating", null, 1, 1);
@@ -148,6 +174,8 @@ public final class Fv2j3Loader {
             }
             progress("running", null, runtimes.size(), runtimes.size());
             logger.info("Ready mod ordering: " + readyOrder);
+            // Persist any per-mod configs that mods touched during init.
+            saveAllConfigs();
             transitionTo(LoaderState.RUNNING);
             // The only path to 100%: the loader truly finished loading all mods.
             progress("complete", null, runtimes.size(), runtimes.size());
@@ -156,6 +184,16 @@ public final class Fv2j3Loader {
             throw new LoaderInitializationException("Fv2j3 loader startup failed: " + ex.getMessage(), ex);
         }
 
+    }
+
+    private void saveAllConfigs() {
+        if (context != null && context.configProvider() instanceof ModConfigRegistry registry) {
+            try {
+                registry.saveAll();
+            } catch (RuntimeException ex) {
+                logger.warn("Failed to persist mod configs: " + ex.getMessage());
+            }
+        }
     }
 
     private void progress(String phase, String modId, int completed, int total) {
@@ -195,6 +233,9 @@ public final class Fv2j3Loader {
                 }
             }
             context.modRegistry().clear();
+            // Final flush: persist any last-second config changes before
+            // the loader shuts down.
+            saveAllConfigs();
             transitionTo(LoaderState.STOPPED);
         } catch (RuntimeException ex) {
             fail(ex);
@@ -209,6 +250,14 @@ public final class Fv2j3Loader {
 
     public void fail(Throwable throwable) {
         fail("Fv2j3 loader failed", throwable);
+    }
+
+    private static ModSide modSideOf(LoaderSide side) {
+        return switch (side) {
+            case CLIENT -> ModSide.CLIENT;
+            case DEDICATED_SERVER -> ModSide.SERVER;
+            case BOTH -> ModSide.BOTH;
+        };
     }
 
     private void discoverAndRegisterSources(List<ModSource> sources) {
@@ -243,6 +292,14 @@ public final class Fv2j3Loader {
         for (ModCandidate candidate : discovered) {
             if (!candidate.validationResult().valid()) {
                 logger.warn("Skipping invalid mod candidate '" + candidate.id() + "' from " + candidate.sourceName());
+                continue;
+            }
+            ModSide modSide = candidate.descriptor().side();
+            ModSide loaderSide = modSideOf(environment.side());
+            if (!modSide.isCompatibleWith(loaderSide)) {
+                logger.warn("Skipping mod '" + candidate.id() + "': it declares side '"
+                        + modSide.value() + "' which cannot load on the '" + loaderSide.value()
+                        + "' side. Remove it from this instance's mods directory or change its side declaration.");
                 continue;
             }
             try {

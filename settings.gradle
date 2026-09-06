@@ -4,4 +4,4 @@ plugins {
 
 rootProject.name = 'Fv2j3'
 
-include 'loader-api', 'loader-core', 'loader-runtime', 'minecraft-compat', 'installer'
+include 'loader-api', 'loader-core', 'loader-runtime', 'minecraft-compat', 'mesrgl-integration', 'mesrgl-universe', 'installer'

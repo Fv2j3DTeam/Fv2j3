@@ -1,0 +1,35 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // Surface stack traces from worker threads
+    testLogging {
+        events 'passed', 'failed', 'skipped', 'standard_error'
+        exceptionFormat = 'full'
+    }
+}
+
+tasks.withType(Javadoc).configureEach {
+    enabled = false
+}
+
+tasks.register('runDemo', JavaExec) {
+    group = 'application'
+    description = 'Run the planet runtime demo'
+    mainClass = 'com.fv2j3.universe.demo.PlanetRuntimeDemo'
+    classpath = sourceSets.main.runtimeClasspath
+}

@@ -1,0 +1,1 @@
+/usr/sbin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/diag_pcg.dir/link.d CMakeFiles/diag_pcg.dir/diag_pcg.cpp.o CMakeFiles/diag_pcg.dir/vulkan/VulkanExecutorDevice.cpp.o -o diag_pcg  /home/mac/Documents/MesrGL/build/libMesrGL.a -ldl -lpthread

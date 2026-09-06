@@ -113,6 +113,10 @@ public final class MinecraftBootstrap {
         LaunchSpec spec = resolveLaunchSpec(resolvedHome, runtimeRoot, kind)
                 .orElseThrow(() -> new IllegalStateException("No valid Minecraft 1.12.2 " + kind.name().toLowerCase() + " runtime could be located. Use --minecraft-home or -Dfv2j3.minecraft.home."));
         URL[] urls = spec.classpath.stream().map(MinecraftBootstrap::toUrl).toArray(URL[]::new);
+        LoaderLogger launchLogger = new StandardLoaderLogger("Fv2j3");
+        launchLogger.info("Launch classpath (" + urls.length + " entries): "
+                + spec.classpath.stream().map(p -> p.getFileName() == null ? p.toString() : p.getFileName().toString())
+                        .collect(java.util.stream.Collectors.joining(", ")));
         String nativePath = spec.nativeDirectories.stream().map(Path::toString).collect(java.util.stream.Collectors.joining(File.pathSeparator));
         if (!nativePath.isBlank()) {
             System.setProperty("java.library.path", nativePath);
@@ -157,7 +161,7 @@ public final class MinecraftBootstrap {
             }
         }
 
-        try (URLClassLoader loader2 = new URLClassLoader(urls, MinecraftBootstrap.class.getClassLoader()) {
+        try (var loader2 = new URLClassLoader(urls, MinecraftBootstrap.class.getClassLoader()) {
             @Override
             protected Class<?> findClass(String name) throws ClassNotFoundException {
                 Class<?> loaded = findLoadedClass(name);
@@ -167,21 +171,42 @@ public final class MinecraftBootstrap {
                 String resourceName = name.replace('.', '/') + ".class";
                 URL resource = findResource(resourceName);
                 if (resource == null) {
-                    throw new ClassNotFoundException(name);
+                    // The raw lookup can miss classes whose jar entry sits in
+                    // a jar the URLClassPath handles specially (e.g. the
+                    // server jar); fall back to URLClassLoader's own search
+                    // before giving up.
+                    try {
+                        return super.findClass(name);
+                    } catch (ClassNotFoundException primaryMiss) {
+                        System.err.println("[Fv2j3] class not found on launch classpath: " + name);
+                        throw primaryMiss;
+                    }
                 }
                 try (var input = resource.openStream()) {
                     byte[] bytes = input.readAllBytes();
+                    byte[] transformed = bytes;
                     if (kind == LaunchKind.CLIENT) {
-                        byte[] transformed = MinecraftModMenuTransformer.transform(name, bytes);
-                        return defineClass(name, transformed, 0, transformed.length);
+                        transformed = MinecraftModMenuTransformer.transform(name, transformed);
+                        transformed = applyMesrGLRenderHook(name, transformed);
                     }
-                    return defineClass(name, bytes, 0, bytes.length);
+                    transformed = MinecraftRegistryBridge.transform(name, transformed);
+                    return defineClass(name, transformed, 0, transformed.length);
                 } catch (IOException ex) {
                     throw new ClassNotFoundException(name, ex);
                 }
             }
+
+            /**
+             * Public define hook for the registry bridge: generated creative
+             * tab subclasses must live inside the Minecraft classloader to
+             * link against Minecraft's own CreativeTabs class.
+             */
+            public Class<?> defineGeneratedClass(String name, byte[] bytes) {
+                return defineClass(name, bytes, 0, bytes.length);
+            }
         }) {
             Thread.currentThread().setContextClassLoader(loader2);
+            MinecraftRegistryBridge.attachClassLoader(loader2::defineGeneratedClass);
             Class<?> mainClass = Class.forName(spec.mainClass, true, loader2);
             Method main = mainClass.getMethod("main", String[].class);
             String[] mcArgs = (kind == LaunchKind.CLIENT)
@@ -199,6 +224,27 @@ public final class MinecraftBootstrap {
 
     public interface LoaderCallback {
         void onLoaderReady(Fv2j3Loader loader, boolean success);
+    }
+
+    /**
+     * Applies the MesrGL render hook (Phase 46) when mesrgl-integration is on
+     * the launch classpath. The call is reflective in this direction on
+     * purpose: the adapter layer must not gain a compile-time dependency on
+     * the renderer module, and a missing renderer module degrades to the
+     * vanilla pipeline instead of failing the launch.
+     */
+    private static byte[] applyMesrGLRenderHook(String name, byte[] bytes) {
+        try {
+            Class<?> hook = Class.forName(
+                    "com.fv2j3.mesrgl.integration.minecraft.MesrGLRenderHook",
+                    true, MinecraftBootstrap.class.getClassLoader());
+            return (byte[]) hook.getMethod("transform", String.class, byte[].class)
+                    .invoke(null, name, bytes);
+        } catch (ClassNotFoundException missing) {
+            return bytes;
+        } catch (ReflectiveOperationException | RuntimeException ex) {
+            throw new IllegalStateException("MesrGL render hook transform failed for " + name, ex);
+        }
     }
 
     public enum LaunchKind {
@@ -277,12 +323,10 @@ public final class MinecraftBootstrap {
         }
 
         List<Path> classpath = new ArrayList<>();
-        if (Files.isRegularFile(minecraftJar)) {
-            classpath.add(minecraftJar);
-        }
         Path serverJar = versionRoot.resolve("minecraft_server" + ".jar");
-        if (kind == LaunchKind.SERVER && Files.isRegularFile(serverJar)) {
-            classpath.add(serverJar);
+        boolean serverJarFirst = kind == LaunchKind.SERVER && Files.isRegularFile(serverJar);
+        if (!serverJarFirst && Files.isRegularFile(minecraftJar)) {
+            classpath.add(minecraftJar);
         }
 
         if (Files.isRegularFile(versionJson)) {
@@ -295,14 +339,25 @@ public final class MinecraftBootstrap {
                     mainClass = root.path("mainClass").asText(CLIENT_MAIN_CLASS);
                 }
 
-                JsonNode libraries = root.path("libraries");
-                if (libraries != null && libraries.isArray()) {
-                    for (JsonNode library : libraries) {
+                List<Path> libraryPaths = new ArrayList<>();
+                JsonNode librariesNode = root.path("libraries");
+                if (librariesNode != null && librariesNode.isArray()) {
+                    for (JsonNode library : librariesNode) {
                         Path libraryPath = resolveLibraryPath(runtimeRoot, library);
                         if (libraryPath != null && Files.isRegularFile(libraryPath)) {
-                            classpath.add(libraryPath);
+                            libraryPaths.add(libraryPath);
                         }
                     }
+                }
+                if (serverJarFirst) {
+                    // Libraries BEFORE the server jar: minecraft_server.jar
+                    // bundles an outdated log4j whose api lacks the message
+                    // classes the game code calls, and as the first classpath
+                    // entry it would shadow the version-correct libraries.
+                    classpath.addAll(libraryPaths);
+                    classpath.add(serverJar);
+                } else {
+                    classpath.addAll(libraryPaths);
                 }
 
                 List<Path> nativeDirectories = kind == LaunchKind.CLIENT
@@ -314,6 +369,9 @@ public final class MinecraftBootstrap {
             }
         }
 
+        if (serverJarFirst) {
+            classpath.add(serverJar);
+        }
         String mainClass = kind == LaunchKind.SERVER ? SERVER_MAIN_CLASS : CLIENT_MAIN_CLASS;
         return Optional.of(new LaunchSpec(runtimeHome, mainClass, classpath, List.of(), kind));
     }

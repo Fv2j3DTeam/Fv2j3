@@ -1,0 +1,71 @@
+#version 450
+// PCG32 verification kernel: runs the same emulated-64-bit PCG32 as
+// pathtrace.comp for given seeds and writes raw outputs for CPU comparison.
+layout(local_size_x = 1) in;
+layout(std430, binding = 0) buffer OutBuf { uint data[]; };
+layout(std140, binding = 4) uniform Seeds {
+    uvec2 seedCtor;   // constructor-form seed
+    uvec2 seedSet;    // setSeed-form seed
+    uint count;
+    uint pad;
+};
+
+uvec2 rngState;
+
+uvec2 uadd64(uvec2 a, uvec2 b) {
+    uint lo = a.x + b.x;
+    uint carry = (lo < a.x) ? 1u : 0u;
+    return uvec2(lo, a.y + b.y + carry);
+}
+uvec2 umul32x32(uint a, uint b) {
+    uint a0 = a & 0xffffu, a1 = a >> 16;
+    uint b0 = b & 0xffffu, b1 = b >> 16;
+    uint p0 = a0 * b0;
+    uint p1 = a0 * b1;
+    uint p2 = a1 * b0;
+    uint p3 = a1 * b1;
+    uint carry = ((p0 >> 16) + (p1 & 0xffffu) + (p2 & 0xffffu)) >> 16;
+    uint lo = p0 + (p1 << 16) + (p2 << 16);
+    uint hi = p3 + (p1 >> 16) + (p2 >> 16) + carry;
+    return uvec2(lo, hi);
+}
+uvec2 umul64(uvec2 a, uvec2 b) {
+    uvec2 p00 = umul32x32(a.x, b.x);
+    uint p10lo = umul32x32(a.y, b.x).x;
+    uint p01lo = umul32x32(a.x, b.y).x;
+    return uvec2(p00.x, p00.y + p10lo + p01lo);
+}
+uvec2 ushr64(uvec2 v, int s) {
+    if (s <= 0) return v;
+    if (s >= 64) return uvec2(0u);
+    if (s < 32) return uvec2((v.x >> s) | (v.y << (32 - s)), v.y >> s);
+    return uvec2(v.y >> (s - 32), 0u);
+}
+uint pcgNextUInt() {
+    uvec2 old = rngState;
+    rngState = uadd64(umul64(old, uvec2(0x4C957F2Du, 0x5851F42Du)), uvec2(0x7f4a7c15u, 0x9e3779b9u));
+    uvec2 shifted = ushr64(old, 18);
+    uvec2 xored = uvec2(shifted.x ^ old.x, shifted.y ^ old.y);
+    uint xorshifted = ushr64(xored, 27).x;
+    uint rot = ushr64(old, 59).x;
+    return (xorshifted >> rot) | (xorshifted << ((0u - rot) & 31u));
+}
+void pcgInitCtor(uvec2 seed) {
+    rngState = seed;
+    pcgNextUInt();
+    rngState = uadd64(rngState, seed);
+    pcgNextUInt();
+}
+void pcgSetSeed(uvec2 seed) {
+    rngState = uvec2(0u);
+    pcgNextUInt();
+    rngState = uadd64(rngState, seed);
+    pcgNextUInt();
+}
+
+void main() {
+    pcgInitCtor(seedCtor);
+    for (uint i = 0u; i < count; ++i) data[i] = pcgNextUInt();
+    pcgSetSeed(seedSet);
+    for (uint i = 0u; i < count; ++i) data[count + i] = pcgNextUInt();
+}

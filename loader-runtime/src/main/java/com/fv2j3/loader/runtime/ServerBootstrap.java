@@ -46,12 +46,31 @@ public final class ServerBootstrap {
             CountDownLatch loaderReadyLatch = new CountDownLatch(1);
             AtomicReference<Throwable> launchError = new AtomicReference<>();
             AtomicBoolean loaderReady = new AtomicBoolean(false);
+            AtomicReference<Fv2j3Loader> activeLoader = new AtomicReference<>();
+
+            // §26 clean shutdown: when the dedicated server JVM exits (normal
+            // "stop" command or SIGTERM), the loader stops — mod onStop hooks
+            // run and per-mod configs are flushed — before the process dies.
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                Fv2j3Loader loaderToStop = activeLoader.get();
+                if (loaderToStop == null) {
+                    return;
+                }
+                try {
+                    logger.info("Shutdown hook: stopping Fv2j3 loader (" + loaderToStop.context().modRegistry().all().size() + " mods)");
+                    loaderToStop.stop();
+                    logger.info("Shutdown hook: Fv2j3 loader stopped cleanly");
+                } catch (Throwable stopFailure) {
+                    logger.error("Shutdown hook: loader stop failed: " + stopFailure.getMessage(), stopFailure);
+                }
+            }, "fv2j3-loader-shutdown"));
 
             Thread minecraftThread = new Thread(() -> {
                 try {
                     MinecraftBootstrap.launchServerWithLoaderCallback(minecraftHome, minecraftArguments(args),
                             (loader, success) -> {
                                 if (loader != null && success) {
+                                    activeLoader.set(loader);
                                     Fv2j3RuntimeBridge.register(loader);
                                     loader.setProgressListener(progress -> {
                                         logger.info("Loading " + progress.phase() + ": "

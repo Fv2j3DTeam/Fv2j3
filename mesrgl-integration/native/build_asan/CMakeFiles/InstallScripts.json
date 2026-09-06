@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/mac/Documents/Fv2j3/mesrgl-integration/native/build_asan/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

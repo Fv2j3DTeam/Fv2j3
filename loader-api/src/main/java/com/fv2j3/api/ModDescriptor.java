@@ -13,7 +13,8 @@ public record ModDescriptor(
         List<ModDependency> dependencies,
         List<ModDependency> optionalDependencies,
         String requiredLoaderVersion,
-        String entrypoint
+        String entrypoint,
+        ModSide side
 ) {
     public ModDescriptor(String id, String version, String name) {
         this(
@@ -26,8 +27,26 @@ public record ModDescriptor(
                 List.of(),
                 List.of(),
                 ">=0.1.0",
-                defaultEntrypoint(id)
+                defaultEntrypoint(id),
+                ModSide.BOTH
         );
+    }
+
+    /** Pre-side-field constructor: metadata without a side declaration loads everywhere. */
+    public ModDescriptor(
+            String id,
+            String version,
+            String name,
+            String description,
+            List<String> authors,
+            String license,
+            List<ModDependency> dependencies,
+            List<ModDependency> optionalDependencies,
+            String requiredLoaderVersion,
+            String entrypoint
+    ) {
+        this(id, version, name, description, authors, license, dependencies,
+                optionalDependencies, requiredLoaderVersion, entrypoint, ModSide.BOTH);
     }
 
     public ModDescriptor {
@@ -41,6 +60,7 @@ public record ModDescriptor(
         optionalDependencies = optionalDependencies == null ? List.of() : List.copyOf(optionalDependencies);
         requiredLoaderVersion = requiredLoaderVersion == null || requiredLoaderVersion.isBlank() ? ">=0.1.0" : requiredLoaderVersion;
         entrypoint = requireNonBlank(entrypoint, "Mod entrypoint");
+        side = side == null ? ModSide.BOTH : side;
     }
 
     public static String defaultEntrypoint(String id) {

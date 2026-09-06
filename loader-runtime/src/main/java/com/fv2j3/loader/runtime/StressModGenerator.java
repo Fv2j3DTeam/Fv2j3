@@ -20,12 +20,23 @@ public final class StressModGenerator {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.err.println("Usage: StressModGenerator <outputDir> <jarsDir> <loaderApiJar>");
+            System.err.println("Usage: StressModGenerator <outputDir> <jarsDir> <loaderApiJar> [count]");
             System.exit(1);
         }
         Path outputDir = Paths.get(args[0]);
         Path jarsDir = Paths.get(args[1]);
         Path loaderApiJar = Paths.get(args[2]);
+        int count = args.length >= 4 ? Math.max(1, Integer.parseInt(args[3])) : MOD_COUNT;
+        generate(outputDir, jarsDir, loaderApiJar, count);
+    }
+
+    /**
+     * Generates {@code count} stress mods (each with 5 items, 5 blocks,
+     * 1 creative tab) into {@code jarsDir}, with the generated source
+     * code in {@code outputDir}. The loader-api JAR is needed on the
+     * compiler classpath.
+     */
+    public static Summary generate(Path outputDir, Path jarsDir, Path loaderApiJar, int count) throws Exception {
         if (!Files.exists(loaderApiJar)) {
             throw new IllegalArgumentException("loader-api JAR not found: " + loaderApiJar);
         }
@@ -35,7 +46,7 @@ public final class StressModGenerator {
 
         int items = 0, blocks = 0, tabs = 0;
 
-        for (int i = 1; i <= MOD_COUNT; i++) {
+        for (int i = 1; i <= count; i++) {
             String modId = String.format("testmod%03d", i);
             Path modDir = outputDir.resolve(modId);
             Files.createDirectories(modDir);
@@ -70,11 +81,15 @@ public final class StressModGenerator {
             "Items: %d\n" +
             "Blocks: %d\n" +
             "Location: %s\n",
-            MOD_COUNT, tabs, items, blocks, jarsDir.toAbsolutePath()
+            count, tabs, items, blocks, jarsDir.toAbsolutePath()
         );
         Files.writeString(summary, summaryText);
         System.out.println(summaryText);
+        return new Summary(count, items, blocks, tabs, jarsDir);
     }
+
+    /** Result of a stress generation run. */
+    public record Summary(int mods, int items, int blocks, int creativeTabs, Path jarsDir) { }
 
     private static String categorize(int i) {
         if (i <= 200) return "basic";

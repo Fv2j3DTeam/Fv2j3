@@ -9,10 +9,11 @@ public final class ModContext {
     private final Object loaderContext;
     private final ModLogger logger;
     private final ModRegistryView registry;
+    private final ModConfigProvider configProvider;
     private final Map<String, Object> attributes;
 
     public ModContext(ModDescriptor descriptor, Object loaderContext, Object logger, Map<String, Object> attributes) {
-        this(descriptor, loaderContext, logger, null, attributes);
+        this(descriptor, loaderContext, logger, null, null, attributes);
     }
 
     public ModContext(
@@ -22,10 +23,22 @@ public final class ModContext {
             ModRegistryView registry,
             Map<String, Object> attributes
     ) {
+        this(descriptor, loaderContext, logger, registry, null, attributes);
+    }
+
+    public ModContext(
+            ModDescriptor descriptor,
+            Object loaderContext,
+            Object logger,
+            ModRegistryView registry,
+            ModConfigProvider configProvider,
+            Map<String, Object> attributes
+    ) {
         this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
         this.loaderContext = loaderContext;
         this.logger = logger instanceof ModLogger modLogger ? modLogger : null;
         this.registry = registry;
+        this.configProvider = configProvider;
         this.attributes = attributes == null ? Map.of() : Collections.unmodifiableMap(Map.copyOf(attributes));
     }
 
@@ -65,6 +78,16 @@ public final class ModContext {
 
     public ModRegistryView registry() {
         return registry;
+    }
+
+    /**
+     * Returns the per-mod config resolver. The resolver is keyed by mod
+     * id; each mod gets its own {@link Fv2j3Config} (backed by its own
+     * file on disk). May be {@code null} in tests that do not provide a
+     * real config directory.
+     */
+    public ModConfigProvider configProvider() {
+        return configProvider;
     }
 
     public ModRuntimeState runtimeState() {

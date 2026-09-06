@@ -1,0 +1,7 @@
+# Hashes of file build rules.
+810e630e36bf55c51f85f2ff82d7dc45 CMakeFiles/pcg_spv
+c06c2cda9f309019df6490a0b92fd55c generated/pathtrace.spv
+2f306a49ca65d81cbea910d9a389d703 generated/pathtrace_payload.cpp
+8fe4fa15d0c8ef6d6752327c20b0ea41 generated/pcg_ref.spv
+4d37cffbb32efd40fc9ccaad1e58f91e generated/present.spv
+df999987a5470ef2d6eb82c7ad46552f generated/present_payload.cpp

@@ -30,7 +30,16 @@ class SystemMonitorServiceTest {
                     OptionalDouble.empty(), OptionalDouble.empty());
         });
         assertTrue(sampled.await(5, TimeUnit.SECONDS), "monitor should sample in the background");
-        SystemStats stats = service.latest();
+        // The latch fires when the producer's callback returns. The publish
+        // step (latest.set) happens in the same statement AFTER the
+        // callback returns, so we still need a short poll for the
+        // snapshot to become visible to the reader.
+        SystemStats stats = null;
+        long deadline = System.currentTimeMillis() + 2000;
+        while (stats == null && System.currentTimeMillis() < deadline) {
+            stats = service.latest();
+            if (stats == null) Thread.sleep(10);
+        }
         assertNotNull(stats);
         assertEquals(0.25, stats.cpuUsage().getAsDouble(), 1e-9);
         assertEquals("25%", stats.cpuUsagePercent());

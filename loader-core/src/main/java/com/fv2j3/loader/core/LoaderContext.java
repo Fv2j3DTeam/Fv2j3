@@ -1,5 +1,6 @@
 package com.fv2j3.loader.core;
 
+import com.fv2j3.api.ModConfigProvider;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ public final class LoaderContext {
     private final Map<String, String> configuration;
     private final ModRegistry modRegistry;
     private final List<ModSource> modSources;
+    private volatile ModConfigProvider configProvider;
 
     public LoaderContext(
             Fv2j3Loader loader,
@@ -83,5 +85,19 @@ public final class LoaderContext {
 
     public ModRegistry modRegistry() {
         return modRegistry;
+    }
+
+    /**
+     * The per-mod config provider wired by the loader. May be null when
+     * no config dir is configured (e.g. minimal tests); mods should
+     * handle that gracefully.
+     */
+    public ModConfigProvider configProvider() {
+        return configProvider;
+    }
+
+    /** Loader-internal setter: the Fv2j3Loader installs the registry. */
+    public void setConfigProvider(ModConfigProvider configProvider) {
+        this.configProvider = configProvider;
     }
 }

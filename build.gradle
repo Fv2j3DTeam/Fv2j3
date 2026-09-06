@@ -238,6 +238,7 @@ ext.bootstrapClasspathFiles = { ->
     classpathFiles << project(':loader-core').layout.buildDirectory.file('libs/loader-core-0.1.0-SNAPSHOT.jar').get().asFile
     classpathFiles << project(':loader-api').layout.buildDirectory.file('libs/loader-api-0.1.0-SNAPSHOT.jar').get().asFile
     classpathFiles << project(':minecraft-compat').layout.buildDirectory.file('libs/minecraft-compat-0.1.0-SNAPSHOT.jar').get().asFile
+    classpathFiles << project(':mesrgl-integration').layout.buildDirectory.file('libs/mesrgl-integration-0.1.0-SNAPSHOT.jar').get().asFile
 
     def gradleUserHome = gradle.gradleUserHomeDir
     def jacksonDatabind = file("${gradleUserHome}/caches/modules-2/files-2.1/com.fasterxml.jackson.core/jackson-databind/2.17.2/e6deb029e5901e027c129341fac39e515066b68c/jackson-databind-2.17.2.jar")
@@ -257,7 +258,7 @@ tasks.register('runClient', JavaExec) {
     group = 'Fv2j3'
     description = 'Launches the real Minecraft 1.12.2 Client with Fv2j3 loader. Uses runs/client as game directory.'
 
-    dependsOn ':loader-runtime:assemble', ':loader-runtime:testModJar', 'prepareMinecraftRuntime'
+    dependsOn ':loader-runtime:assemble', ':loader-runtime:testModJar', 'prepareMinecraftRuntime', 'cleanTestWorld'
 
     doFirst {
         def runtimeHome = file(minecraftRuntimeHome.get())
@@ -278,6 +279,10 @@ tasks.register('runClient', JavaExec) {
         systemProperty 'fv2j3.verification.dir', verificationDir.absolutePath
         systemProperty 'fv2j3.launch.target', 'client'
         systemProperty 'fv2j3.mods.dir', modsDir.absolutePath
+        // Forward MesrGL integration tuning properties to the game JVM.
+        System.properties.findAll { it.key.startsWith('fv2j3.mesrgl.') }.each {
+            systemProperty it.key, it.value
+        }
         workingDir = runDir
         def bootstrapCp = bootstrapClasspathFiles()
         if (bootstrapClasspathFiles().isEmpty()) {
@@ -286,6 +291,12 @@ tasks.register('runClient', JavaExec) {
         classpath = files(bootstrapCp)
         mainClass = 'com.fv2j3.loader.runtime.ClientBootstrap'
         args = ["--mods=${modsDir.absolutePath}", "--minecraft-home=${runtimeHome.absolutePath}"]
+        // MC 1.12.2 needs little heap, but the host machine shares RAM with
+        // the IDE/browser/iGPU; a pinned, modest heap keeps GC deterministic
+        // instead of relying on late heap expansion under memory pressure.
+        maxHeapSize = '2g'
+        minHeapSize = '2g'
+        jvmArgs '-XX:G1HeapRegionSize=4m', '-XX:+HeapDumpOnOutOfMemoryError', '-XX:HeapDumpPath=/var/tmp'
         standardInput = System.in
         ignoreExitValue = true
         logger.lifecycle('Launching Minecraft 1.12.2 Client with Fv2j3...')
@@ -300,7 +311,7 @@ tasks.register('runServer', JavaExec) {
     group = 'Fv2j3'
     description = 'Launches the real Minecraft 1.12.2 Dedicated Server with Fv2j3 loader. Uses runs/server as game directory.'
 
-    dependsOn ':loader-runtime:assemble', ':loader-runtime:testModJar', 'prepareMinecraftRuntime'
+    dependsOn ':loader-runtime:assemble', ':loader-runtime:testModJar', 'prepareMinecraftRuntime', 'cleanTestWorld'
 
     doFirst {
         def runtimeHome = file(minecraftRuntimeHome.get())
@@ -323,8 +334,24 @@ tasks.register('runServer', JavaExec) {
         systemProperty 'fv2j3.mods.dir', modsDir.absolutePath
         workingDir = runDir
         classpath = files(bootstrapClasspathFiles())
+        // minecraft_server.jar bundles an outdated log4j whose api lacks
+        // message classes the game code calls (ReusableSimpleMessage). Put
+        // the version-correct log4j on the PARENT loader so parent-first
+        // delegation always resolves log4j to the new jars, never the
+        // bundled ones.
+        def log4jBase = new File(runtimeHome, 'org/apache/logging/log4j')
+        def log4jApi = file("${log4jBase}/log4j-api/2.8.1/log4j-api-2.8.1.jar".toString())
+        def log4jCore = file("${log4jBase}/log4j-core/2.8.1/log4j-core-2.8.1.jar".toString())
+        if (log4jApi.exists() && log4jCore.exists()) {
+            classpath += files(log4jApi, log4jCore)
+        } else {
+            throw new GradleException("log4j 2.8.1 jars missing from the runtime home: " + log4jBase)
+        }
         mainClass = 'com.fv2j3.loader.runtime.ServerBootstrap'
         args = ["--mods=${modsDir.absolutePath}", "--minecraft-home=${runtimeHome.absolutePath}", "nogui"]
+        maxHeapSize = '2g'
+        minHeapSize = '2g'
+        jvmArgs '-XX:G1HeapRegionSize=4m', '-XX:+HeapDumpOnOutOfMemoryError', '-XX:HeapDumpPath=/var/tmp'
         standardInput = System.in
         ignoreExitValue = true
         logger.lifecycle('Launching Minecraft 1.12.2 Dedicated Server with Fv2j3...')
@@ -544,5 +571,99 @@ tasks.register('buildInstaller', JavaExec) {
         logger.lifecycle("Fv2j3 Installer:")
         logger.lifecycle("  ${target.absolutePath}")
         logger.lifecycle("")
+    }
+}
+
+// ============================================================
+// cleanTestWorld
+//
+// Wipes the dedicated Fv2j3 test-client Minecraft save directory
+// before every test-client startup. This is required for automated
+// visual validation: the rendered scene must be deterministic across
+// runs, so the test world must begin empty every time.
+//
+// Safety:
+//   - The cleanup target is the same `minecraftRuntimeHome` that
+//     `runClient` / `runServer` use, resolved from the same
+//     provider (fv2j3.minecraft.home property or build/minecraft-runtime
+//     default). If the resolved path is missing or not inside the
+//     project tree (and not a system Minecraft install), the task
+//     FAILS rather than touching an arbitrary directory.
+//   - Only the `saves/` subdirectory of that runtime is removed.
+//     mods, config, resourcepacks, assets, libraries, and the MesrGL /
+//     Fv2j3 binaries all remain untouched.
+//   - There is no JVM startup hook: cleanTestWorld is a Gradle task
+//     that the operator invokes explicitly (typically as part of
+//     `cleanTestWorld runClient`).
+// ============================================================
+
+// The cleaner is invoked as a JavaExec task registered on the
+// loader-runtime subproject (so its classpath can see TestWorldCleaner
+// + CleanerMain). The root cleanTestWorld task reads the runtime /
+// project / user-home paths from the same minecraftRuntimeHome provider
+// used by runClient/runServer, stashes them in an ext property on the
+// runCleaner task, and the runCleaner doFirst block passes them to the
+// child JVM as -D system properties.
+// (No subproject JavaExec task is registered any more; the root
+// cleanTestWorld spawns the cleaner as a plain subprocess so we can
+// inject the resolved paths as -D flags. This avoids the
+// "systemProperty after configuration" ordering hazard.)
+
+tasks.register('cleanTestWorld') {
+    group = 'Fv2j3'
+    description = 'Wipes the Fv2j3 test-client save directory. Use before runClient for deterministic test worlds.'
+
+    dependsOn 'prepareMinecraftRuntime', ':loader-runtime:jar'
+
+    doLast {
+        def configuredHome = minecraftRuntimeHome.get()
+        if (configuredHome == null || configuredHome.trim().isEmpty()) {
+            throw new GradleException("cleanTestWorld: fv2j3.minecraft.home is not set; refusing to guess a game directory.")
+        }
+        def runtimeHome = file(configuredHome).absoluteFile
+        def projectRoot = rootDir.absoluteFile
+        def userHome = System.getProperty('user.home') ?: ''
+
+        // Build the classpath: all of loader-runtime's main + loader-api
+        // main + minecraft-compat main.
+        def loaderRuntimeClasses = project(':loader-runtime').sourceSets.main.output
+        def loaderApiClasses = project(':loader-api').sourceSets.main.output
+        def minecraftCompatClasses = project(':minecraft-compat').sourceSets.main.output
+        def classpath = [
+                loaderRuntimeClasses.classesDirs.asPath,
+                loaderApiClasses.classesDirs.asPath,
+                minecraftCompatClasses.classesDirs.asPath
+        ]
+        def sep = System.getProperty('path.separator', ':')
+        def cp = classpath.join(sep)
+
+        def javaBin = System.getProperty('java.home') + File.separator + 'bin' + File.separator + 'java'
+        // Build the command with -D system properties prepended to the JVM
+        // args (so the child CleanerMain sees them via System.getProperty).
+        def command = [
+                javaBin,
+                '-Dfv2j3.cleaner.runtimeHome=' + runtimeHome.absolutePath,
+                '-Dfv2j3.cleaner.projectRoot=' + projectRoot.absolutePath,
+                '-Dfv2j3.cleaner.userHome=' + userHome,
+                '-cp', cp,
+                'com.fv2j3.loader.runtime.CleanerMain'
+        ]
+        logger.lifecycle("[Fv2j3] Invoking cleaner: ${javaBin} -cp <classpath> com.fv2j3.loader.runtime.CleanerMain")
+        logger.lifecycle("  runtimeHome = ${runtimeHome.absolutePath}")
+        logger.lifecycle("  projectRoot = ${projectRoot.absolutePath}")
+        logger.lifecycle("  userHome    = ${userHome}")
+
+        def process = new ProcessBuilder(command)
+                .directory(rootDir)
+                .redirectErrorStream(true)
+                .start()
+        int exit = process.waitFor()
+        // Surface the cleaner's stdout in the Gradle log (inheritIO()
+        // goes to the JVM's terminal, not Gradle's logger, so we capture).
+        def output = process.inputStream.text
+        output.eachLine { line -> logger.lifecycle(line) }
+        if (exit != 0) {
+            throw new GradleException("cleanTestWorld: cleaner exited with code " + exit)
+        }
     }
 }

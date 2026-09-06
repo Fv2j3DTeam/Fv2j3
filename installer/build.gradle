@@ -44,7 +44,8 @@ tasks.register('collectRuntimeJars', Copy) {
 
     def targetDir = file("${project.buildDir}/tmp/fv2j3-runtime")
 
-    dependsOn ':loader-api:jar', ':loader-core:jar', ':loader-runtime:jar', ':minecraft-compat:jar'
+    dependsOn ':loader-api:jar', ':loader-core:jar', ':loader-runtime:jar',
+              ':loader-runtime:testModJar', ':minecraft-compat:jar'
 
     doFirst {
         targetDir.mkdirs()
@@ -55,6 +56,7 @@ tasks.register('collectRuntimeJars', Copy) {
     from(project(':loader-api').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
     from(project(':loader-core').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
     from(project(':loader-runtime').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
+    from(project(':loader-runtime').layout.buildDirectory.file('libs/fv2j3-test-mod.jar')) { into 'mods' }
     from(project(':minecraft-compat').layout.buildDirectory.dir('libs')) { include '*.jar'; into 'libs' }
 
     doLast {

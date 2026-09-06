@@ -1,0 +1,152 @@
+plugins {
+    id 'java-library'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(26)
+    }
+}
+
+dependencies {
+    api project(':loader-api')
+    implementation project(':minecraft-compat')
+    implementation 'org.ow2.asm:asm:9.8'
+}
+
+// ============================================================
+// Native bridge build (libMesrGLBridge.so)
+//
+// Two-stage CMake build:
+//   1. MesrGL static library (CPU software renderer; the reference
+//      implementation, fallback, and CPU assist workloads)
+//   2. The JNI bridge + GPU executor (links MesrGL statically;
+//      opens libvulkan at runtime only; no link-time GPU deps)
+//
+// If MesrGL or the native toolchain is unavailable, the Java layer
+// still builds; the renderer then reports the CPU/native bridge as
+// unavailable (never faked).
+// ============================================================
+
+ext {
+    mesrglSourceDir = file("${rootDir}/../MesrGL")
+    nativeBuildDir = file("${buildDir}/native")
+    mesrglBuildDir = file("${nativeBuildDir}/mesrgl")
+    bridgeBuildDir = file("${nativeBuildDir}/bridge")
+    nativeOutputDir = file("${buildDir}/native-outputs")
+}
+
+def mesrglAvailable = mesrglSourceDir.exists()
+
+tasks.register('buildMesrGLStatic', Exec) {
+    group = 'mesrgl'
+    description = 'Builds the MesrGL static library (CPU software renderer)'
+    onlyIf { mesrglAvailable }
+    doFirst {
+        mesrglBuildDir.mkdirs()
+    }
+    environment 'LD_LIBRARY_PATH', ''
+    commandLine 'cmake', '-S', mesrglSourceDir.absolutePath, '-B', mesrglBuildDir.absolutePath,
+            '-DCMAKE_BUILD_TYPE=Release'
+}
+
+tasks.register('compileMesrGLStatic', Exec) {
+    group = 'mesrgl'
+    dependsOn 'buildMesrGLStatic'
+    onlyIf { mesrglAvailable }
+    environment 'LD_LIBRARY_PATH', ''
+    commandLine 'cmake', '--build', mesrglBuildDir.absolutePath, '--parallel',
+            Runtime.runtime.availableProcessors().toString()
+}
+
+tasks.register('configureBridge', Exec) {
+    group = 'mesrgl'
+    description = 'Configures the MesrGL JNI bridge + GPU executor'
+    dependsOn 'compileMesrGLStatic'
+    onlyIf { mesrglAvailable }
+    doFirst {
+        bridgeBuildDir.mkdirs()
+    }
+    environment 'LD_LIBRARY_PATH', ''
+    commandLine 'cmake', '-S', file('native').absolutePath, '-B', bridgeBuildDir.absolutePath,
+            "-DMESRGL_ROOT=${mesrglSourceDir.absolutePath}",
+            "-DMESRGL_LIBRARY=${mesrglBuildDir.absolutePath}/libMesrGL.a",
+            "-DJAVA_HOME=${System.getProperty('java.home')}",
+            '-DCMAKE_BUILD_TYPE=Release'
+}
+
+tasks.register('compileBridge', Exec) {
+    group = 'mesrgl'
+    dependsOn 'configureBridge'
+    onlyIf { mesrglAvailable }
+    environment 'LD_LIBRARY_PATH', ''
+    commandLine 'cmake', '--build', bridgeBuildDir.absolutePath, '--parallel',
+            Runtime.runtime.availableProcessors().toString()
+}
+
+def osClassifier = {
+    def osName = System.getProperty('os.name', '').toLowerCase()
+    def arch = System.getProperty('os.arch', '').toLowerCase()
+    def osPart = osName.contains('win') ? 'windows' : (osName.contains('mac') ? 'macos' : 'linux')
+    // Must match MesrGLNativeLoader.normalizeArch()
+    def archPart = (arch.contains('aarch64') || arch.contains('arm64')) ? 'aarch64' : 'x86_64'
+    return "${osPart}-${archPart}"
+}()
+
+tasks.register('collectNatives', Copy) {
+    group = 'mesrgl'
+    description = 'Collects built native libraries for JAR packaging'
+    dependsOn 'compileBridge'
+    onlyIf { mesrglAvailable }
+    from bridgeBuildDir
+    include '*.so', '*.dylib', '*.dll'
+    into "${nativeOutputDir}/META-INF/native/${osClassifier}"
+}
+
+// Package natives into the JAR when they were built.
+tasks.named('jar') {
+    dependsOn 'collectNatives'
+    // Include only if the native output exists (build remains runnable
+    // without the native toolchain; the renderer reports availability).
+    from nativeOutputDir
+}
+
+tasks.register('cleanNatives', Delete) {
+    group = 'mesrgl'
+    delete nativeBuildDir, nativeOutputDir
+}
+
+tasks.named('clean') {
+    dependsOn 'cleanNatives'
+}
+
+// Ensure the test JVM can find libMesrGLBridge.so via the classpath
+// resource extractor (MesrGLNativeLoader looks up
+// META-INF/native/<classifier>/libMesrGLBridge.so). We stage the lib
+// into a test resource directory so the standard resource lookup works.
+def testNativeResourceDir = file("${buildDir}/resources/test/META-INF/native/${osClassifier}")
+tasks.register('stageTestNative') {
+    group = 'mesrgl'
+    description = 'Copies libMesrGLBridge.so into test resources for native loader'
+    dependsOn 'compileBridge'
+    outputs.dir testNativeResourceDir
+    doLast {
+        testNativeResourceDir.mkdirs()
+        def src = file("${bridgeBuildDir}/libMesrGLBridge.so")
+        if (src.exists()) {
+            def dst = file("${testNativeResourceDir}/libMesrGLBridge.so")
+            dst.bytes = src.bytes
+            dst.setExecutable(true, false)
+        }
+    }
+}
+tasks.withType(Test).configureEach {
+    dependsOn 'stageTestNative'
+    // The native loader extracts the .so to a temp dir and uses System.load
+    // on it; we leave java.library.path alone (the loader does the work).
+    maxHeapSize = '4g'
+}
+
+tasks.withType(Javadoc).configureEach {
+    enabled = false
+}

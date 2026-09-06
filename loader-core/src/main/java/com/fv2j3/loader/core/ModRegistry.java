@@ -2,6 +2,7 @@ package com.fv2j3.loader.core;
 
 import com.fv2j3.api.ModContainer;
 import com.fv2j3.api.ModContainerState;
+import com.fv2j3.api.ModConfigProvider;
 import com.fv2j3.api.ModContext;
 import com.fv2j3.api.ModDependency;
 import com.fv2j3.api.ModDescriptor;
@@ -115,11 +116,13 @@ public final class ModRegistry implements com.fv2j3.api.ModRegistryView {
             }
 
             defaultContainer.setState(ModContainerState.READY);
+            ModConfigProvider configProvider = loaderContext.configProvider();
             defaultContainer.setContext(new ModContext(
                     descriptor,
                     loaderContext,
                     loaderContext.logger(),
                     this,
+                    configProvider,
                     Map.of(
                             "registry", this,
                             "sourceName", defaultContainer.sourceName(),
