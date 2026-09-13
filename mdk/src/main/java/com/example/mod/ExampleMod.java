@@ -1,8 +1,8 @@
 package com.example.mod;
 
-import com.fv2j3.api.Mod;
-import com.fv2j3.api.ModContext;
-import com.fv2j3.api.ModDescriptor;
+import io.github.fv2j3dteam.api.Mod;
+import io.github.fv2j3dteam.api.ModContext;
+import io.github.fv2j3dteam.api.ModDescriptor;
 
 public final class ExampleMod implements Mod {
     private static final ModDescriptor DESCRIPTOR = new ModDescriptor(

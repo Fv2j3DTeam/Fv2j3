@@ -33,7 +33,7 @@ Mod code
 
 This means:
 
-- `com.fv2j3.api.*` resolves from a stable parent loader
+- `io.github.fv2j3dteam.api.*` resolves from a stable parent loader
 - mod code is isolated per mod
 - dependency and lifecycle ordering are resolved before class loading begins
 - the loader remains decoupled from Minecraft game code and Forge bootstrapping

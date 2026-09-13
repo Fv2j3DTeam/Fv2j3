@@ -6,5 +6,5 @@
   "authors": ["Fv2j3"],
   "license": "MIT",
   "requiredLoaderVersion": ">=0.1.0",
-  "entrypoint": "com.fv2j3test.Fv2j3TestMod"
+  "entrypoint": "com.fv2j3dteam.testmod.Fv2j3TestMod"
 }

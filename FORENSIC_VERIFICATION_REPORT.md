@@ -170,12 +170,12 @@ public InputStream getResource(String name) {
 
 ```java
 private static final List<String> PROTECTED_PREFIXES = List.of(
-    "com.fv2j3.",
+    "io.github.fv2j3dteam.",
     "net.minecraft."
 );
 ```
 
-**Missing**: `com.fv2j3.loader.core` is NOT protected.
+**Missing**: `io.github.fv2j3dteam.loader.core` is NOT protected.
 
 ### Event Bus: MOD ISOLATION BROKEN
 
@@ -486,7 +486,7 @@ mdk/
 
 ### Medium-Risk Findings
 
-1. Protected packages don't include `com.fv2j3.loader.core`
+1. Protected packages don't include `io.github.fv2j3dteam.loader.core`
 2. `Fv2j3Config` never tested with real mod JARs
 3. Documentation/tags are generated, not from actual execution
 

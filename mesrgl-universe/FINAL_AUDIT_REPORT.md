@@ -54,7 +54,7 @@ working, tested, documented system.
 ## MODULE STRUCTURE
 
 ```
-mesrgl-universe/src/main/java/com/fv2j3/universe/
+mesrgl-universe/src/main/java/io/github/fv2j3dteam/universe/
 ├── UniverseFactory.java          # Top-level wiring
 ├── api/                          # Public stable API (ApiObject, UniverseApi)
 ├── biome/                        # BiomeDefinition, BiomeRegistry
@@ -235,7 +235,7 @@ mesrgl-universe/src/main/java/com/fv2j3/universe/
 
 ## API SURFACE
 
-Public APIs (all under `com.fv2j3.universe`):
+Public APIs (all under `io.github.fv2j3dteam.universe`):
 
 - `UniverseApi` — universe root
 - `ApiObject` — identity / lifetime / thread-affinity contract

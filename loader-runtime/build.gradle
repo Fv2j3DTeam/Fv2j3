@@ -39,7 +39,7 @@ tasks.named('test') {
 }
 
 application {
-    mainClass = 'com.fv2j3.loader.runtime.ClientBootstrap'
+    mainClass = 'io.github.fv2j3dteam.loader.runtime.ClientBootstrap'
 }
 
 tasks.named('run', JavaExec) {

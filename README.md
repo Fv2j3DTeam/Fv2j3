@@ -88,7 +88,7 @@ Fv2j3 is an independent Minecraft 1.12.2 Mod Loader providing a complete modding
 ```
 Fv2j3/
 ├── loader-api/          # Public Mod API
-│   └── src/main/java/com/fv2j3/api/
+│   └── src/main/java/io/github/fv2j3dteam/api/
 │       ├── Fv2j3Item.java
 │       ├── Fv2j3Block.java
 │       ├── Fv2j3CreativeTab.java
@@ -100,7 +100,7 @@ Fv2j3/
 │       ├── ModDescriptor.java
 │       └── ModDependency.java
 ├── loader-core/         # Loader implementation
-│   └── src/main/java/com/fv2j3/loader/core/
+│   └── src/main/java/io/github/fv2j3dteam/loader/core/
 │       ├── Fv2j3Loader.java
 │       ├── LoaderContext.java
 │       ├── LoaderState.java
@@ -109,12 +109,12 @@ Fv2j3/
 │       ├── ModDependencyGraph.java
 │       └── DocumentationGenerator.java
 ├── loader-runtime/      # Bootstrap entry point
-│   └── src/main/java/com/fv2j3/loader/runtime/
+│   └── src/main/java/io/github/fv2j3dteam/loader/runtime/
 │       ├── Bootstrap.java
 │       ├── StressModGenerator.java
 │       └── StressTestRunner.java
 ├── minecraft-compat/   # Minecraft 1.12.2 integration
-│   └── src/main/java/com/fv2j3/minecraft/compat/
+│   └── src/main/java/io/github/fv2j3dteam/minecraft/compat/
 │       ├── MinecraftBootstrap.java
 │       └── MinecraftModMenuTransformer.java
 ├── mdk/                # Mod Development Kit
@@ -149,7 +149,7 @@ Fv2j3/
 ```java
 package com.example.mod;
 
-import com.fv2j3.api.*;
+import io.github.fv2j3dteam.api.*;
 
 public final class ExampleMod implements Mod {
     private static final ModDescriptor DESCRIPTOR = new ModDescriptor(

@@ -30,6 +30,6 @@ tasks.withType(Javadoc).configureEach {
 tasks.register('runDemo', JavaExec) {
     group = 'application'
     description = 'Run the planet runtime demo'
-    mainClass = 'com.fv2j3.universe.demo.PlanetRuntimeDemo'
+    mainClass = 'io.github.fv2j3dteam.universe.demo.PlanetRuntimeDemo'
     classpath = sourceSets.main.runtimeClasspath
 }

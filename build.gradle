@@ -2,6 +2,7 @@ import groovy.json.JsonSlurper
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.regex.Pattern
 import java.util.zip.ZipFile
 
 ext {
@@ -10,14 +11,15 @@ ext {
     minecraftRuntimeHome = providers.gradleProperty('fv2j3.minecraft.home')
             .orElse(providers.systemProperty('fv2j3.minecraft.home'))
             .orElse(providers.provider { new File(rootDir, 'build/minecraft-runtime').absolutePath })
-    fv2j3Group = 'com.fv2j3'
+    fv2j3Group = 'io.github.fv2j3dteam'
+    fv2j3Author = 'Fv2j3DTeam'
     fv2j3Version = '0.1.0-SNAPSHOT'
 }
 
 subprojects {
     apply plugin: 'java'
 
-    group = 'com.fv2j3'
+    group = 'io.github.fv2j3dteam'
     version = '0.1.0-SNAPSHOT'
 
     repositories {
@@ -289,7 +291,7 @@ tasks.register('runClient', JavaExec) {
             throw new GradleException("Bootstrap classpath is empty! JARs not found. Check that loader modules have been built.")
         }
         classpath = files(bootstrapCp)
-        mainClass = 'com.fv2j3.loader.runtime.ClientBootstrap'
+        mainClass = 'io.github.fv2j3dteam.loader.runtime.ClientBootstrap'
         args = ["--mods=${modsDir.absolutePath}", "--minecraft-home=${runtimeHome.absolutePath}"]
         // MC 1.12.2 needs little heap, but the host machine shares RAM with
         // the IDE/browser/iGPU; a pinned, modest heap keeps GC deterministic
@@ -347,7 +349,7 @@ tasks.register('runServer', JavaExec) {
         } else {
             throw new GradleException("log4j 2.8.1 jars missing from the runtime home: " + log4jBase)
         }
-        mainClass = 'com.fv2j3.loader.runtime.ServerBootstrap'
+        mainClass = 'io.github.fv2j3dteam.loader.runtime.ServerBootstrap'
         args = ["--mods=${modsDir.absolutePath}", "--minecraft-home=${runtimeHome.absolutePath}", "nogui"]
         maxHeapSize = '2g'
         minHeapSize = '2g'
@@ -369,7 +371,7 @@ tasks.register('generateStressMods', JavaExec) {
     dependsOn ':loader-runtime:assemble', ':loader-core:assemble', ':loader-api:assemble', ':minecraft-compat:assemble'
 
     classpath = files(bootstrapClasspathFiles())
-    mainClass = 'com.fv2j3.loader.runtime.StressModGenerator'
+    mainClass = 'io.github.fv2j3dteam.loader.runtime.StressModGenerator'
 
     def stressOutputDir = file("${rootDir}/build/stress-mods")
     def stressJarsDir = file("${rootDir}/build/stress-jars")
@@ -413,7 +415,7 @@ tasks.register('stressTestClient', JavaExec) {
         systemProperty 'fv2j3.stress.run.dir', runDir.absolutePath
         systemProperty 'fv2j3.stress.mods.dir', modsDir.absolutePath
         classpath = files(bootstrapClasspathFiles())
-        mainClass = 'com.fv2j3.loader.runtime.StressTestRunner'
+        mainClass = 'io.github.fv2j3dteam.loader.runtime.StressTestRunner'
         args = [
             stressJarsDir.absolutePath,
             stressReport.absolutePath,
@@ -449,7 +451,7 @@ tasks.register('stressTestServer', JavaExec) {
         systemProperty 'fv2j3.stress.run.dir', runDir.absolutePath
         systemProperty 'fv2j3.stress.mods.dir', modsDir.absolutePath
         classpath = files(bootstrapClasspathFiles())
-        mainClass = 'com.fv2j3.loader.runtime.StressTestRunner'
+        mainClass = 'io.github.fv2j3dteam.loader.runtime.StressTestRunner'
         args = [
             stressJarsDir.absolutePath,
             stressReport.absolutePath,
@@ -479,7 +481,7 @@ tasks.register('generateDocumentation', JavaExec) {
     classpathFiles << project(':loader-core').layout.buildDirectory.file('libs/loader-core-0.1.0-SNAPSHOT.jar').get().asFile
 
     classpath = files(classpathFiles.findAll { it.exists() })
-    mainClass = 'com.fv2j3.loader.core.DocumentationGenerator'
+    mainClass = 'io.github.fv2j3dteam.loader.core.DocumentationGenerator'
 
     def docsDir = file("${rootDir}/build/docs")
     doFirst { docsDir.mkdirs() }
@@ -497,7 +499,7 @@ tasks.register('generateTutorial', JavaExec) {
     classpathFiles << project(':loader-core').layout.buildDirectory.file('libs/loader-core-0.1.0-SNAPSHOT.jar').get().asFile
 
     classpath = files(classpathFiles.findAll { it.exists() })
-    mainClass = 'com.fv2j3.loader.core.TutorialGenerator'
+    mainClass = 'io.github.fv2j3dteam.loader.core.TutorialGenerator'
 
     def tutorialDir = file("${rootDir}/build/tutorial")
     doFirst { tutorialDir.mkdirs() }
@@ -646,9 +648,9 @@ tasks.register('cleanTestWorld') {
                 '-Dfv2j3.cleaner.projectRoot=' + projectRoot.absolutePath,
                 '-Dfv2j3.cleaner.userHome=' + userHome,
                 '-cp', cp,
-                'com.fv2j3.loader.runtime.CleanerMain'
+                'io.github.fv2j3dteam.loader.runtime.CleanerMain'
         ]
-        logger.lifecycle("[Fv2j3] Invoking cleaner: ${javaBin} -cp <classpath> com.fv2j3.loader.runtime.CleanerMain")
+        logger.lifecycle("[Fv2j3] Invoking cleaner: ${javaBin} -cp <classpath> io.github.fv2j3dteam.loader.runtime.CleanerMain")
         logger.lifecycle("  runtimeHome = ${runtimeHome.absolutePath}")
         logger.lifecycle("  projectRoot = ${projectRoot.absolutePath}")
         logger.lifecycle("  userHome    = ${userHome}")
@@ -665,5 +667,207 @@ tasks.register('cleanTestWorld') {
         if (exit != 0) {
             throw new GradleException("cleanTestWorld: cleaner exited with code " + exit)
         }
+    }
+}
+
+// ============================================================
+// Push / Publish
+//
+//   push    — git push the local master branch to origin master.
+//             Fails fast if the working tree is dirty (so accidental
+//             uncommitted changes never go upstream) or if there is
+//             no upstream tracking branch yet.
+//
+//   publish — depends on buildInstaller (which produces
+//             build/distributions/Fv2j3-Installer.jar). Tags the
+//             current HEAD with a date-based version (DYYYYMMDD,
+//             e.g. D20260907 for 2026-09-07), pushes the tag, and
+//             creates a GitHub Release on origin with that tag,
+//             uploading the installer JAR as the release asset.
+//
+//   Versioning rule (per project policy):
+//     D + YYYY + MM + DD  →  example: D20260907
+//   If today's tag already exists on origin (e.g. publishing twice
+//   in one day), pass `-Pfv2j3.publish.tagOverride=DYYYYMMDD-N` to
+//   disambiguate.
+//
+//   Requirements:
+//     * gh CLI installed and authenticated (`gh auth status` OK)
+//     * git remote `origin` pointing at the GitHub repo
+//       (default: Fv2j3DTeam/Fv2j3, overridable via
+//       -Pfv2j3.release.repository=owner/repo)
+// ============================================================
+
+def resolveReleaseRepository = {
+    def repo = providers.gradleProperty('fv2j3.release.repository').orNull
+    if (repo != null && !repo.trim().isEmpty()) {
+        return repo.trim()
+    }
+    def proc = ['git', 'config', '--get', 'remote.origin.url'].execute()
+    proc.waitFor()
+    def url = proc.text?.trim()
+    if (url) {
+        // Normalize git URLs to owner/repo form for `gh release create`.
+        // Accepts:
+        //   https://github.com/owner/repo(.git)
+        //   git@github.com:owner/repo(.git)
+        def m = (url =~ Pattern.compile('github\\.com[:/](.+?)/([^/]+?)(?:\\.git)?/?$'))
+        if (m.find()) {
+            return "${m.group(1)}/${m.group(2)}"
+        }
+    }
+    return 'Fv2j3DTeam/Fv2j3'
+}
+
+def computePublishTag = { String today ->
+    def override = providers.gradleProperty('fv2j3.publish.tagOverride').orNull
+    if (override != null && !override.trim().isEmpty()) {
+        return override.trim()
+    }
+    return "D${today}"
+}
+
+def computeTodayStamp = {
+    return new Date().format('yyyyMMdd')
+}
+
+tasks.register('push') {
+    group = 'Fv2j3'
+    description = 'Pushes the local master branch to origin/master. Refuses if the working tree is dirty.'
+
+    doLast {
+        // Verify the working tree is clean so accidental uncommitted changes
+        // never leak upstream.
+        def statusProc = ['git', 'status', '--porcelain'].execute()
+        statusProc.waitFor()
+        def dirty = statusProc.text?.trim()
+        if (dirty) {
+            throw new GradleException("Working tree is dirty; refusing to push:\n${dirty}")
+        }
+
+        // Make sure a master branch exists locally; if not, fail clearly.
+        def branchProc = ['git', 'rev-parse', '--verify', '--quiet', 'master'].execute()
+        branchProc.waitFor()
+        if (branchProc.exitValue() != 0) {
+            throw new GradleException("No local 'master' branch exists. Create one before running 'push'.")
+        }
+
+        // Ensure an upstream tracking ref so `git push` does the right thing.
+        def upstreamProc = ['git', 'rev-parse', '--abbrev-ref', '--symbolic-full-name', 'master@{u}'].execute()
+        upstreamProc.waitFor()
+        if (upstreamProc.exitValue() != 0) {
+            logger.lifecycle("No upstream tracking branch for master; setting origin/master as upstream.")
+            new ByteArrayOutputStream().withStream { /* swallow */ }
+            exec {
+                commandLine 'git', 'push', '--set-upstream', 'origin', 'master'
+            }
+        } else {
+            exec {
+                commandLine 'git', 'push', 'origin', 'master'
+            }
+        }
+        logger.lifecycle("Pushed master to origin.")
+    }
+}
+
+tasks.register('publish') {
+    group = 'Fv2j3'
+    description = 'Builds the installer, tags HEAD with D{YYYYMMDD}, pushes the tag, and creates a GitHub Release with the installer attached.'
+
+    dependsOn 'buildInstaller'
+
+    doLast {
+        def installerJar = file("${rootDir}/build/distributions/Fv2j3-Installer.jar")
+        if (!installerJar.exists()) {
+            throw new GradleException("publish: expected installer at ${installerJar} but it is missing.")
+        }
+
+        def repository = resolveReleaseRepository()
+        def today = computeTodayStamp()
+        def tag = computePublishTag(today)
+
+        // Verify the working tree is clean: a publish must not silently
+        // include uncommitted edits.
+        def statusProc = ['git', 'status', '--porcelain'].execute()
+        statusProc.waitFor()
+        def dirty = statusProc.text?.trim()
+        if (dirty) {
+            throw new GradleException("Working tree is dirty; refusing to publish. Commit/stash first:\n${dirty}")
+        }
+
+        // Check tag presence on origin (so we don't blindly re-push an
+        // immutable tag).
+        def lsRemote = ['git', 'ls-remote', '--tags', 'origin', "refs/tags/${tag}"].execute()
+        lsRemote.waitFor()
+        if (lsRemote.text?.trim()) {
+            throw new GradleException("publish: tag '${tag}' already exists on origin. Pass -Pfv2j3.publish.tagOverride=D{YYYYMMDD}-N to disambiguate.")
+        }
+
+        // Create and push the tag locally first (annotated, signed-off-ish).
+        exec {
+            commandLine 'git', 'tag', '-a', tag, '-m', "Release ${tag} (authored by ${fv2j3Author})"
+        }
+        try {
+            exec {
+                commandLine 'git', 'push', 'origin', tag
+            }
+        } catch (Exception tagPushFailure) {
+            // If the push failed (network/auth), roll back the local tag
+            // so a retry does not see a stale tag-already-exists error.
+            exec {
+                commandLine 'git', 'tag', '-d', tag
+                ignoreExitValue = true
+            }
+            throw tagPushFailure
+        }
+
+        // Build release notes.
+        def notes = "Fv2j3 release ${tag}\n" +
+                "Author: ${fv2j3Author}\n" +
+                "Group: ${fv2j3Group}\n" +
+                "Version: ${fv2j3Version}\n" +
+                "Built: ${new Date()}\n" +
+                "\n" +
+                "Installer: Fv2j3-Installer.jar\n"
+
+        // gh release create: emits the tag, builds the GitHub Release,
+        // and uploads the installer as the release asset. --generate-notes
+        // asks GitHub to compose a PR-style changelog from merged PRs.
+        def notesFile = file("${buildDir}/tmp/release-notes-${tag}.md")
+        notesFile.parentFile.mkdirs()
+        notesFile.text = notes
+
+        try {
+            exec {
+                commandLine 'gh', 'release', 'create', tag,
+                        '--repo', repository,
+                        '--title', "Fv2j3 ${tag}",
+                        '--notes-file', notesFile.absolutePath,
+                        '--generate-notes',
+                        installerJar.absolutePath
+            }
+        } catch (Exception releaseFailure) {
+            // Best-effort cleanup of the just-pushed tag if release creation
+            // failed, so the next attempt is clean.
+            exec {
+                commandLine 'gh', 'release', 'delete', tag, '--repo', repository, '--yes'
+                ignoreExitValue = true
+            }
+            exec {
+                commandLine 'git', 'push', 'origin', '--delete', tag
+                ignoreExitValue = true
+            }
+            exec {
+                commandLine 'git', 'tag', '-d', tag
+                ignoreExitValue = true
+            }
+            throw releaseFailure
+        }
+
+        logger.lifecycle("")
+        logger.lifecycle("Publish complete.")
+        logger.lifecycle("  Release: https://github.com/${repository}/releases/tag/${tag}")
+        logger.lifecycle("  Installer: ${installerJar.absolutePath}")
+        logger.lifecycle("")
     }
 }

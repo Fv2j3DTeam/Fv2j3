@@ -4,7 +4,8 @@ plugins {
 }
 
 def fv2j3Version = project.findProperty('fv2j3Version') ?: '0.1.0-SNAPSHOT'
-def fv2j3Group = project.findProperty('fv2j3Group') ?: 'com.fv2j3'
+def fv2j3Group = project.findProperty('fv2j3Group') ?: 'io.github.fv2j3dteam'
+def fv2j3Author = project.findProperty('fv2j3Author') ?: 'Fv2j3DTeam'
 
 group = fv2j3Group
 version = fv2j3Version
@@ -123,10 +124,10 @@ shadowJar {
     exclude 'META-INF/*.RSA'
     manifest {
         attributes(
-            'Main-Class': 'com.fv2j3.installer.InstallerMain',
+            'Main-Class': 'io.github.fv2j3dteam.installer.InstallerMain',
             'Implementation-Title': 'Fv2j3 Installer',
             'Implementation-Version': version,
-            'Implementation-Vendor': 'Fv2j3',
+            'Implementation-Vendor': fv2j3Author,
             'Specification-Title': 'Fv2j3 Installer',
             'Specification-Version': version,
             'Build-Java': System.getProperty('java.version', 'unknown')
@@ -153,7 +154,7 @@ tasks.register('selfTest', JavaExec) {
     dependsOn shadowJar
 
     classpath = files(tasks.named('shadowJar').get().archiveFile.get().asFile)
-    mainClass = 'com.fv2j3.installer.InstallerMain'
+    mainClass = 'io.github.fv2j3dteam.installer.InstallerMain'
     args = ['--self-test']
     ignoreExitValue = false
 }

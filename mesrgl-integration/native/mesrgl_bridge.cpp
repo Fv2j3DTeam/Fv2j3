@@ -117,7 +117,7 @@ extern "C" {
 // Renderer lifecycle
 // ------------------------------------------------------------
 
-JNIEXPORT jlong JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createRenderer(JNIEnv*, jclass) {
+JNIEXPORT jlong JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_createRenderer(JNIEnv*, jclass) {
     auto* renderer = new BridgeRenderer(64, 64);
     renderer->scene = std::make_shared<MesrGL::Scene>();
 
@@ -145,7 +145,7 @@ JNIEXPORT jlong JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createRenderer(JNIEnv*, 
     return toHandle(renderer);
 }
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_destroyRenderer(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_destroyRenderer(JNIEnv*, jclass, jlong handle) {
     auto* renderer = self(handle);
     if (!renderer) return;
     {
@@ -161,7 +161,7 @@ JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_destroyRenderer(JNIEnv*, 
     delete renderer;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_initializeRenderer(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_initializeRenderer(
         JNIEnv*, jclass, jlong handle, jint width, jint height, jint spp, jint maxBounces,
         jint numThreads, jboolean deterministic, jlong rngSeed) {
     auto* renderer = self(handle);
@@ -188,7 +188,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_initializeRenderer(
     return JNI_TRUE;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_resizeRenderer(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_resizeRenderer(
         JNIEnv*, jclass, jlong handle, jint width, jint height) {
     auto* renderer = self(handle);
     if (!renderer || width <= 0 || height <= 0 || width > 16384 || height > 16384) return JNI_FALSE;
@@ -203,17 +203,17 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_resizeRenderer(
 // Framebuffer
 // ------------------------------------------------------------
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getFramebufferWidth(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getFramebufferWidth(JNIEnv*, jclass, jlong handle) {
     auto* renderer = self(handle);
     return renderer ? static_cast<jint>(renderer->width) : 0;
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getFramebufferHeight(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getFramebufferHeight(JNIEnv*, jclass, jlong handle) {
     auto* renderer = self(handle);
     return renderer ? static_cast<jint>(renderer->height) : 0;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_readFramebufferRGBA8(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_readFramebufferRGBA8(
         JNIEnv* env, jclass, jlong handle, jobject buffer) {
     auto* renderer = self(handle);
     if (!renderer || !buffer) return JNI_FALSE;
@@ -235,7 +235,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_readFramebufferRGBA8(
     return JNI_TRUE;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_readFramebufferRGBA32F(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_readFramebufferRGBA32F(
         JNIEnv* env, jclass, jlong handle, jfloatArray buffer) {
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
@@ -260,12 +260,12 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_readFramebufferRGBA32
 // Scene management
 // ------------------------------------------------------------
 
-JNIEXPORT jlong JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createScene(JNIEnv*, jclass, jlong) {
+JNIEXPORT jlong JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_createScene(JNIEnv*, jclass, jlong) {
     // The bridge keeps one scene per renderer; the id is a stable token.
     return 1;
 }
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_destroyScene(JNIEnv*, jclass, jlong handle, jlong) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_destroyScene(JNIEnv*, jclass, jlong handle, jlong) {
     auto* renderer = self(handle);
     if (!renderer) return;
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -273,7 +273,7 @@ JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_destroyScene(JNIEnv*, jcl
     renderer->bumpScene();
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_addMesh(
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_addMesh(
         JNIEnv* env, jclass, jlong handle, jlong, jfloatArray positions, jfloatArray normals,
         jfloatArray texCoords, jintArray indices, jint materialId) {
     auto* renderer = self(handle);
@@ -327,7 +327,7 @@ JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_addMesh(
     return static_cast<jint>(renderer->scene->meshes.size() - 1);
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_removeMesh(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_removeMesh(
         JNIEnv*, jclass, jlong handle, jlong, jint meshId) {
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
@@ -340,7 +340,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_removeMesh(
     return JNI_TRUE;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateMeshTransform(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_updateMeshTransform(
         JNIEnv* env, jclass, jlong handle, jlong, jint meshId, jfloatArray transform) {
     auto* renderer = self(handle);
     if (!renderer || !transform) return JNI_FALSE;
@@ -371,7 +371,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateMeshTransform(
     return JNI_TRUE;
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createMaterial(
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_createMaterial(
         JNIEnv*, jclass, jlong handle, jfloat ar, jfloat ag, jfloat ab, jfloat roughness,
         jfloat metallic, jfloat emission, jfloat transmission, jfloat ior) {
     auto* renderer = self(handle);
@@ -391,7 +391,7 @@ JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createMaterial(
     return static_cast<jint>(renderer->scene->meshes.size() - 1);
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateMaterial(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_updateMaterial(
         JNIEnv*, jclass, jlong handle, jint materialId, jfloat ar, jfloat ag, jfloat ab,
         jfloat roughness, jfloat metallic, jfloat emission, jfloat transmission, jfloat ior) {
     auto* renderer = self(handle);
@@ -410,7 +410,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateMaterial(
     return JNI_TRUE;
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createTexture(
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_createTexture(
         JNIEnv*, jclass, jlong handle, jint width, jint height, jint channels, jbyteArray) {
     auto* renderer = self(handle);
     if (!renderer) return -1;
@@ -424,14 +424,14 @@ JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_createTexture(
     return 1;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateTexture(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_updateTexture(
         JNIEnv*, jclass, jlong, jint, jint, jint, jint, jbyteArray) {
     return JNI_TRUE;
 }
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_destroyTexture(JNIEnv*, jclass, jlong, jint) {}
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_destroyTexture(JNIEnv*, jclass, jlong, jint) {}
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setMaterialTexture(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaterialTexture(
         JNIEnv*, jclass, jlong handle, jint materialId, jint textureId) {
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
@@ -477,7 +477,7 @@ bool uploadFrameParamsLocked(BridgeRenderer* renderer, std::string& error) {
 
 } // namespace
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_buildAccelerationStructure(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_buildAccelerationStructure(
         JNIEnv*, jclass, jlong handle, jlong) {
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
@@ -490,7 +490,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_buildAccelerationStru
     return JNI_TRUE;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateAccelerationStructure(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_updateAccelerationStructure(
         JNIEnv*, jclass, jlong handle, jlong) {
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
@@ -507,7 +507,7 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_updateAccelerationStr
 // Camera
 // ------------------------------------------------------------
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setCamera(
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setCamera(
         JNIEnv*, jclass, jlong handle, jlong, jfloat px, jfloat py, jfloat pz,
         jfloat tx, jfloat ty, jfloat tz, jfloat ux, jfloat uy, jfloat uz,
         jfloat fovY, jfloat aspect, jfloat zNear, jfloat zFar) {
@@ -528,7 +528,7 @@ JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setCamera(
 // Lights
 // ------------------------------------------------------------
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_addDirectionalLight(
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_addDirectionalLight(
         JNIEnv*, jclass, jlong handle, jlong, jfloat dx, jfloat dy, jfloat dz,
         jfloat r, jfloat g, jfloat b, jfloat intensity) {
     auto* renderer = self(handle);
@@ -544,7 +544,7 @@ JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_addDirectionalLight(
     return static_cast<jint>(renderer->scene->lights.size() - 1);
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_addPointLight(
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_addPointLight(
         JNIEnv*, jclass, jlong handle, jlong, jfloat px, jfloat py, jfloat pz,
         jfloat r, jfloat g, jfloat b, jfloat intensity, jfloat range) {
     auto* renderer = self(handle);
@@ -561,7 +561,7 @@ JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_addPointLight(
     return static_cast<jint>(renderer->scene->lights.size() - 1);
 }
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_removeLight(
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_removeLight(
         JNIEnv*, jclass, jlong handle, jlong, jint lightId) {
     auto* renderer = self(handle);
     if (!renderer || !renderer->scene) return;
@@ -575,7 +575,7 @@ JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_removeLight(
 // Rendering
 // ------------------------------------------------------------
 
-JNIEXPORT jdouble JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_renderFrame(JNIEnv*, jclass, jlong handle, jlong) {
+JNIEXPORT jdouble JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_renderFrame(JNIEnv*, jclass, jlong handle, jlong) {
     auto* renderer = self(handle);
     if (!renderer || !renderer->scene) return -1.0;
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -614,7 +614,7 @@ JNIEXPORT jdouble JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_renderFrame(JNIEnv*, j
     return renderer->lastCpuRenderMs;
 }
 
-JNIEXPORT jdouble JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_renderFrameProgressive(
+JNIEXPORT jdouble JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_renderFrameProgressive(
         JNIEnv*, jclass, jlong handle, jlong, jint frameIndex) {
     auto* renderer = self(handle);
     if (!renderer || !renderer->scene) return -1.0;
@@ -655,12 +655,12 @@ JNIEXPORT jdouble JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_renderFrameProgressive
     return renderer->lastCpuRenderMs;
 }
 
-JNIEXPORT jlong JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getTotalRaysTraced(JNIEnv*, jclass, jlong) {
+JNIEXPORT jlong JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getTotalRaysTraced(JNIEnv*, jclass, jlong) {
     // MesrGL's reference renderer does not count rays (returns 0 there too).
     return 0;
 }
 
-JNIEXPORT jdouble JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getLastRenderTimeMs(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jdouble JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getLastRenderTimeMs(JNIEnv*, jclass, jlong handle) {
     auto* renderer = self(handle);
     if (!renderer) return -1.0;
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -668,7 +668,7 @@ JNIEXPORT jdouble JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getLastRenderTimeMs(JN
     return renderer->lastCpuRenderMs;
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getBVHNodeCount(JNIEnv*, jclass, jlong handle, jlong) {
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getBVHNodeCount(JNIEnv*, jclass, jlong handle, jlong) {
     auto* renderer = self(handle);
     if (!renderer) return 0;
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -680,23 +680,23 @@ JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getBVHNodeCount(JNIEnv*, 
 // Settings
 // ------------------------------------------------------------
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setSamplesPerPixel(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setSamplesPerPixel(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.samplesPerPixel = v > 0 ? v : 1;
 }
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setMaxSamplesPerPixel(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaxSamplesPerPixel(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return JNI_FALSE;
     std::lock_guard<std::mutex> l(r->mutex);
     r->settings.maxSamplesPerPixel = v > 0 ? v : 1;
     return JNI_TRUE;
 }
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setClearColor(JNIEnv*, jclass, jlong handle, jfloat ar, jfloat ag, jfloat ab) {
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setClearColor(JNIEnv*, jclass, jlong handle, jfloat ar, jfloat ag, jfloat ab) {
     auto* r = self(handle); if (!r) return JNI_FALSE;
     std::lock_guard<std::mutex> l(r->mutex);
     if (!r->scene) return JNI_FALSE;
     r->scene->clearColor = MesrGL::Vec3(ar, ag, ab);
     return JNI_TRUE;
 }
-JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_reserveSceneCapacity(
+JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_reserveSceneCapacity(
         JNIEnv*, jclass, jlong handle, jlong triangleBytes, jlong bvhBytes,
         jlong materialBytes, jlong lightBytes, jint width, jint height) {
     auto* r = self(handle); if (!r) return JNI_FALSE;
@@ -708,49 +708,49 @@ JNIEXPORT jboolean JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_reserveSceneCapacity(
     // A failed reserve is not fatal: ensureCapacity grows on demand.
     return JNI_TRUE;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setMaxBounces(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaxBounces(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.maxBounces = v > 0 ? v : 1;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setMaxDiffuseBounces(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaxDiffuseBounces(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.maxDiffuseBounces = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setMaxSpecularBounces(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaxSpecularBounces(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.maxSpecularBounces = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setMaxTransmissionBounces(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaxTransmissionBounces(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.maxTransmissionBounces = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setShadowsEnabled(JNIEnv*, jclass, jlong handle, jboolean v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setShadowsEnabled(JNIEnv*, jclass, jlong handle, jboolean v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.shadowsEnabled = v == JNI_TRUE;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setGIEnabled(JNIEnv*, jclass, jlong handle, jboolean v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setGIEnabled(JNIEnv*, jclass, jlong handle, jboolean v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.giEnabled = v == JNI_TRUE;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setAdaptiveSampling(JNIEnv*, jclass, jlong handle, jboolean v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setAdaptiveSampling(JNIEnv*, jclass, jlong handle, jboolean v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.adaptiveSampling = v == JNI_TRUE;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setVarianceThreshold(JNIEnv*, jclass, jlong handle, jfloat v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setVarianceThreshold(JNIEnv*, jclass, jlong handle, jfloat v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.varianceThreshold = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setDenoisingEnabled(JNIEnv*, jclass, jlong handle, jboolean v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setDenoisingEnabled(JNIEnv*, jclass, jlong handle, jboolean v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.denoisingEnabled = v == JNI_TRUE;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setToneMapping(JNIEnv*, jclass, jlong handle, jint mode) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setToneMapping(JNIEnv*, jclass, jlong handle, jint mode) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex);
     if (mode >= 0 && mode <= 6) {
         r->settings.colorPipeline.toneMapping = static_cast<MesrGL::ToneMapping>(mode);
     }
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setExposure(JNIEnv*, jclass, jlong handle, jfloat v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setExposure(JNIEnv*, jclass, jlong handle, jfloat v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.colorPipeline.exposure = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setGamma(JNIEnv*, jclass, jlong handle, jfloat v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setGamma(JNIEnv*, jclass, jlong handle, jfloat v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.colorPipeline.gamma = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setNumThreads(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setNumThreads(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.numThreads = v;
 }
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setTileSize(JNIEnv*, jclass, jlong handle, jint v) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setTileSize(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex); r->settings.tileSize = v;
 }
 
@@ -758,7 +758,7 @@ JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setTileSize(JNIEnv*, jcla
 // Diagnostics
 // ------------------------------------------------------------
 
-JNIEXPORT jstring JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getDiagnosticInfo(JNIEnv* env, jclass, jlong handle) {
+JNIEXPORT jstring JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getDiagnosticInfo(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = self(handle);
     if (!renderer) return toJString(env, "renderer handle invalid");
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -788,7 +788,7 @@ JNIEXPORT jstring JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getDiagnosticInfo(JNIE
     return toJString(env, info);
 }
 
-JNIEXPORT jstring JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getDeviceName(JNIEnv* env, jclass, jlong handle) {
+JNIEXPORT jstring JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getDeviceName(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = self(handle);
     if (!renderer) return toJString(env, "N/A");
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -798,19 +798,19 @@ JNIEXPORT jstring JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getDeviceName(JNIEnv* 
     return toJString(env, "CPU (MesrGL SoftwareRayTracer)");
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getBackendKind(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getBackendKind(JNIEnv*, jclass, jlong handle) {
     auto* renderer = self(handle);
     if (!renderer) return BACKEND_NONE;
     std::lock_guard<std::mutex> lock(renderer->mutex);
     return renderer->gpuActive ? BACKEND_GPU : BACKEND_CPU;
 }
 
-JNIEXPORT jint JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getRendererState(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getRendererState(JNIEnv*, jclass, jlong handle) {
     auto* renderer = self(handle);
     return renderer ? static_cast<jint>(renderer->state) : STATE_FAILED;
 }
 
-JNIEXPORT jstring JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getLastError(JNIEnv* env, jclass, jlong handle) {
+JNIEXPORT jstring JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_getLastError(JNIEnv* env, jclass, jlong handle) {
     auto* renderer = self(handle);
     if (!renderer) return toJString(env, "renderer handle invalid");
     std::lock_guard<std::mutex> lock(renderer->mutex);
@@ -821,7 +821,7 @@ JNIEXPORT jstring JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_getLastError(JNIEnv* e
 // Backend preference (called before createRenderer)
 // ------------------------------------------------------------
 
-JNIEXPORT void JNICALL Java_com_fv2j3_mesrgl_MesrGLJNI_setPreferredBackend(JNIEnv*, jclass, jint mode) {
+JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setPreferredBackend(JNIEnv*, jclass, jint mode) {
     // 0 = auto (GPU when available), 1 = force CPU, 2 = prefer GPU.
     switch (mode) {
         case 1: setenv("MESRGL_BACKEND", "cpu", 1); break;

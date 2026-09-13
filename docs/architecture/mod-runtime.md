@@ -79,7 +79,7 @@ This design is intentionally honest. If the environment does not contain a real 
 
 Each mod is isolated in a dedicated `ModClassLoader` with parent delegation to the stable Fv2j3 API layer. The loader preserves the protected namespace boundaries:
 
-- `com.fv2j3.*`
+- `io.github.fv2j3dteam.*`
 - `net.minecraft.*`
 - `net.minecraftforge.*`
 
@@ -213,7 +213,7 @@ The close rules must be deterministic:
 
 ## 14. Parent delegation strategy
 
-The project recommends parent-first class loading for `com.fv2j3.api.*` and implementation packages owned by Fv2j3 itself.
+The project recommends parent-first class loading for `io.github.fv2j3dteam.api.*` and implementation packages owned by Fv2j3 itself.
 
 Suggested delegation rules:
 
@@ -235,9 +235,9 @@ This avoids duplicate API identities while still supporting mod-local code.
 
 | Package | Owner | Mod can define it? |
 | --- | --- | --- |
-| `com.fv2j3.api.*` | Fv2j3 API parent | No |
-| `com.fv2j3.loader.*` | Fv2j3 core | No |
-| `com.fv2j3.minecraft.*` | minecraft-compat | No |
+| `io.github.fv2j3dteam.api.*` | Fv2j3 API parent | No |
+| `io.github.fv2j3dteam.loader.*` | Fv2j3 core | No |
+| `io.github.fv2j3dteam.minecraft.*` | minecraft-compat | No |
 | `net.minecraft.*` | Minecraft | No |
 | `net.minecraftforge.*` | Forge | No |
 | Mod package | Mod | Yes |

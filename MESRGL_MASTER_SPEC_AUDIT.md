@@ -87,7 +87,7 @@ Statuses: **PASS** (implemented + verified here) · **PARTIAL** (works, gaps lis
 | 16 | Water | PARTIAL | `OceanSystem`/`WaveSystem` wind-driven params + LOD. Screen-space reflection/refraction absent |
 | 17 | Particles | PARTIAL | Pooled SoA-ish droplet arrays. Generic pooled particle framework (fire sparks/debris) absent |
 | 18 | World representation | ABSENT (renderer) | Universe module has chunks/streaming/LOD, but no renderer-side chunk→mesh abstraction, no per-chunk BVH updates |
-| 19 | MC 1.12.2 integration | PARTIAL | Real client runs (latest.log Sept 4, world join OK, heavy tick lag). **No render-loop adapter exists: zero imports of `com.fv2j3.mesrgl` outside the module — the renderer API is currently dead code** |
+| 19 | MC 1.12.2 integration | PARTIAL | Real client runs (latest.log Sept 4, world join OK, heavy tick lag). **No render-loop adapter exists: zero imports of `io.github.fv2j3dteam.mesrgl` outside the module — the renderer API is currently dead code** |
 | 20 | Loader integration | **PASS** | 310 non-empty stress mods (real javac output, 0-byte-class guard), real JAR/ClassLoader paths, `stressTestClient/Server` tasks; renderer-init failure fallback in `MesrGLRendererManager` (API level). Gap: `ModSide` never consumed (no per-mod side filtering) |
 | 21 | Resource system | PARTIAL | Mesh/texture/material upload APIs. Missing: caches, versioning, hot reload, async decode |
 | 22 | Post processing | PARTIAL | Exposure + 6 tone mappers + gamma/sRGB (CPU+kernel parity). Missing: bloom, vignette, color grading, DoF/motion blur |
@@ -157,7 +157,7 @@ activity overlay confirming MesrGL is active.
 integration were derived from the jar's bytecode (documented in
 `MinecraftReflection.java`), with runtime sanity checks.
 
-## Implementation (all in `mesrgl-integration`, package `com.fv2j3.mesrgl.integration.minecraft`)
+## Implementation (all in `mesrgl-integration`, package `io.github.fv2j3dteam.mesrgl.integration.minecraft`)
 | Component | Role |
 |---|---|
 | `MesrGLRenderHook` | ASM transformer injecting a head-of-method callback into `buq.b(FJ)V`; returns true → vanilla body skipped, MesrGL produced the frame; false → explicit vanilla fallback (logged) |
