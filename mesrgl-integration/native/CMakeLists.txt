@@ -80,6 +80,8 @@ size_t present_spirv_words() { return 0; }
 }
 ")
     list(APPEND KERNEL_BODIES "${STUB}")
+    # Create an empty target to satisfy dependencies
+    add_custom_target(mesrgl_kernel_payloads ALL)
 endif()
 
 # ------------------------------------------------------------
@@ -88,18 +90,23 @@ endif()
 add_library(MesrGLBridge SHARED
     mesrgl_bridge.cpp
     gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
     ${KERNEL_BODIES}
 )
+
+# Conditionally add VulkanExecutorDevice if Vulkan headers available
+if(EXISTS "${MESRGL_ROOT}/third_party/Vulkan-Headers/include")
+    target_sources(MesrGLBridge PRIVATE vulkan/VulkanExecutorDevice.cpp)
+    target_include_directories(MesrGLBridge PRIVATE
+        "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
+    )
+endif()
+
 add_dependencies(MesrGLBridge mesrgl_kernel_payloads)
 
 target_include_directories(MesrGLBridge PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
+    "${MESRGL_ROOT}/include"
     "${GENERATED_DIR}"
-    "${JAVA_HOME}/include"
-    "${JAVA_HOME}/include/linux"
     "${JNI_INCLUDE_DIRS}"
 )
 
@@ -115,126 +122,79 @@ target_link_libraries(MesrGLBridge PRIVATE
 # ------------------------------------------------------------
 # Bridge test suite (native, runs the real GPU when present)
 # ------------------------------------------------------------
-add_executable(diag_crossval diag_crossval.cpp
-    gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
-    ${KERNEL_BODIES}
-)
-add_dependencies(diag_crossval mesrgl_kernel_payloads)
-target_include_directories(diag_crossval PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-)
-target_link_libraries(diag_crossval PRIVATE
-    "${MESRGL_LIBRARY}"
-    ${CMAKE_DL_LIBS}
-    pthread
-)
+# Helper function to add diagnostic test with conditional Vulkan includes
+function(add_diagnostic_test target_name sources)
+    add_executable(${target_name} ${sources})
+    add_dependencies(${target_name} mesrgl_kernel_payloads)
+    target_include_directories(${target_name} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${MESRGL_ROOT}/include"
+        "${GENERATED_DIR}"
+    )
+    if(EXISTS "${MESRGL_ROOT}/third_party/Vulkan-Headers/include")
+        target_include_directories(${target_name} PRIVATE
+            "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
+        )
+    endif()
+    target_link_libraries(${target_name} PRIVATE
+        "${MESRGL_LIBRARY}"
+        ${CMAKE_DL_LIBS}
+        pthread
+    )
+endfunction()
 
-add_executable(diag_minimal diag_minimal.cpp
-    gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
-    ${KERNEL_BODIES}
-)
-add_dependencies(diag_minimal mesrgl_kernel_payloads)
-target_include_directories(diag_minimal PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-)
-target_link_libraries(diag_minimal PRIVATE
-    "${MESRGL_LIBRARY}"
-    ${CMAKE_DL_LIBS}
-    pthread
-)
+# Helper function for Vulkan-dependent tests (only built when Vulkan headers available)
+function(add_vulkan_test target_name sources)
+    if(EXISTS "${MESRGL_ROOT}/third_party/Vulkan-Headers/include")
+        add_executable(${target_name} ${sources})
+        add_dependencies(${target_name} mesrgl_kernel_payloads)
+        target_include_directories(${target_name} PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${MESRGL_ROOT}"
+            "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
+            "${GENERATED_DIR}"
+        )
+        target_link_libraries(${target_name} PRIVATE
+            "${MESRGL_LIBRARY}"
+            ${CMAKE_DL_LIBS}
+            pthread
+        )
+    else()
+        message(WARNING "Skipping ${target_name} - Vulkan headers not found")
+    endif()
+endfunction()
 
-add_executable(diag_bisect diag_bisect.cpp
-    gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
-    ${KERNEL_BODIES}
-)
-add_dependencies(diag_bisect mesrgl_kernel_payloads)
-target_include_directories(diag_bisect PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-)
-target_link_libraries(diag_bisect PRIVATE
-    "${MESRGL_LIBRARY}"
-    ${CMAKE_DL_LIBS}
-    pthread
-)
-
-add_executable(diag_scanline diag_scanline.cpp
-    gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
-    ${KERNEL_BODIES}
-)
-add_dependencies(diag_scanline mesrgl_kernel_payloads)
+# Add diagnostic tests that use Vulkan (only when Vulkan headers available)
+add_vulkan_test(diag_crossval "diag_crossval.cpp;gpu_executor.cpp;vulkan/VulkanExecutorDevice.cpp;${KERNEL_BODIES}")
+add_vulkan_test(diag_minimal "diag_minimal.cpp;gpu_executor.cpp;vulkan/VulkanExecutorDevice.cpp;${KERNEL_BODIES}")
+add_vulkan_test(diag_bisect "diag_bisect.cpp;gpu_executor.cpp;vulkan/VulkanExecutorDevice.cpp;${KERNEL_BODIES}")
+add_vulkan_test(diag_scanline "diag_scanline.cpp;gpu_executor.cpp;vulkan/VulkanExecutorDevice.cpp;${KERNEL_BODIES}")
 
 # GPU scaling diagnosis: pathtrace time vs triangle count (fence-timeout probe).
-add_executable(diag_scaled diag_scaled.cpp
-    gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
-    ${KERNEL_BODIES}
-)
-add_dependencies(diag_scaled mesrgl_kernel_payloads)
-target_include_directories(diag_scaled PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-    "${GENERATED_DIR}"
-)
-target_link_libraries(diag_scaled PRIVATE
-    "${MESRGL_LIBRARY}"
-)
-target_include_directories(diag_scanline PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-)
-target_link_libraries(diag_scanline PRIVATE
-    "${MESRGL_LIBRARY}"
-    ${CMAKE_DL_LIBS}
-    pthread
-)
+add_vulkan_test(diag_scaled "diag_scaled.cpp;gpu_executor.cpp;vulkan/VulkanExecutorDevice.cpp;${KERNEL_BODIES}")
 
-add_executable(diag_pcg diag_pcg.cpp
-    vulkan/VulkanExecutorDevice.cpp
-)
-target_include_directories(diag_pcg PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-)
-target_link_libraries(diag_pcg PRIVATE
-    "${MESRGL_LIBRARY}"
-    ${CMAKE_DL_LIBS}
-    pthread
-)
+add_vulkan_test(diag_pcg "diag_pcg.cpp;vulkan/VulkanExecutorDevice.cpp")
+if(EXISTS "${MESRGL_ROOT}/third_party/Vulkan-Headers/include")
+    add_dependencies(diag_pcg mesrgl_kernel_payloads)
+    target_include_directories(diag_pcg PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${MESRGL_ROOT}"
+        "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
+        "${GENERATED_DIR}"
+    )
+    target_link_libraries(diag_pcg PRIVATE
+        "${MESRGL_LIBRARY}"
+        ${CMAKE_DL_LIBS}
+        pthread
+    )
 
-add_custom_command(
-    OUTPUT "${GENERATED_DIR}/pcg_ref.spv"
-    COMMAND "${GLSLANG_VALIDATOR}" -V "${CMAKE_CURRENT_SOURCE_DIR}/pcg_ref.comp" -o "${GENERATED_DIR}/pcg_ref.spv"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/pcg_ref.comp"
-)
-add_custom_target(pcg_spv ALL DEPENDS "${GENERATED_DIR}/pcg_ref.spv")
-add_dependencies(diag_pcg pcg_spv)
+    add_custom_command(
+        OUTPUT "${GENERATED_DIR}/pcg_ref.spv"
+        COMMAND "${GLSLANG_VALIDATOR}" -V "${CMAKE_CURRENT_SOURCE_DIR}/pcg_ref.comp" -o "${GENERATED_DIR}/pcg_ref.spv"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/pcg_ref.comp"
+    )
+    add_custom_target(pcg_spv ALL DEPENDS "${GENERATED_DIR}/pcg_ref.spv")
+    add_dependencies(diag_pcg pcg_spv)
+endif()
 
-add_executable(bridge_tests bridge_tests.cpp
-    gpu_executor.cpp
-    vulkan/VulkanExecutorDevice.cpp
-    ${KERNEL_BODIES}
-)
-add_dependencies(bridge_tests mesrgl_kernel_payloads)
-target_include_directories(bridge_tests PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${MESRGL_ROOT}"
-    "${MESRGL_ROOT}/third_party/Vulkan-Headers/include"
-)
-target_link_libraries(bridge_tests PRIVATE
-    "${MESRGL_LIBRARY}"
-    ${CMAKE_DL_LIBS}
-    pthread
-)
+add_vulkan_test(bridge_tests "bridge_tests.cpp;gpu_executor.cpp;vulkan/VulkanExecutorDevice.cpp;${KERNEL_BODIES}")

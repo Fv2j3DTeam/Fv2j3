@@ -19,3 +19,4 @@ runs/
 logs/
 crash-reports/
 *.log.gz
+.java/

@@ -1,6 +1,7 @@
 package io.github.fv2j3dteam.installer;
 
 import io.github.fv2j3dteam.installer.core.InstallerEngine;
+import io.github.fv2j3dteam.installer.core.MinecraftDetector;
 import io.github.fv2j3dteam.installer.util.SelfContainedExtractor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -115,17 +116,17 @@ public final class InstallerSelfTest {
     private void testMinecraftDetector() throws Exception {
         Path detected = InstallerEngine.detectMinecraftDirectory();
         if (detected != null) {
-            InstallerEngine.MinecraftDirectory dir = InstallerEngine.analyze(detected);
+            MinecraftDetector.MinecraftDirectory dir = InstallerEngine.analyze(detected);
             if (dir.path() == null)
                 throw new AssertionError("MinecraftDetector.analyze returned null path for detected directory");
         }
-        InstallerEngine.MinecraftDirectory notFound = InstallerEngine.analyze(Paths.get("/nonexistent/path/12345"));
+        MinecraftDetector.MinecraftDirectory notFound = InstallerEngine.analyze(Paths.get("/nonexistent/path/12345"));
         if (notFound.path() != null)
             throw new AssertionError("MinecraftDetector should return null path for nonexistent directory");
     }
 
     private void testMinecraft112Detector() throws Exception {
-        InstallerEngine.MinecraftDirectory dir = InstallerEngine.analyze(Paths.get("/nonexistent"));
+        MinecraftDetector.MinecraftDirectory dir = InstallerEngine.analyze(Paths.get("/nonexistent"));
         if (dir.hasVersion112() || dir.hasVersionJson() || dir.hasVersionJar())
             throw new AssertionError("Nonexistent path should not have version files");
     }

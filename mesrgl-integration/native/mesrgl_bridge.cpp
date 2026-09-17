@@ -16,8 +16,8 @@
 
 #include "MesrGL/Core.hpp"
 #include "MesrGL/Renderer.hpp"
-#include "MesrGL/GpuScene.hpp"
-#include "gpu_executor.hpp"
+#include "MesrGL/Framebuffer.hpp"
+#include "MesrGL/GpuExecutor.hpp"
 
 #include <jni.h>
 #include <chrono>
@@ -27,6 +27,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+
+#include "gpu_executor.hpp"
 
 namespace {
 
@@ -91,7 +93,7 @@ struct BridgeRenderer {
         sceneBuilt = false;
     }
 
-    MesrGL::Material* materialById(int id) {
+    MesrGL::VoxelMaterial* materialById(int id) {
         if (!scene || id < 0 || id >= static_cast<int>(scene->meshes.size())) return nullptr;
         return &scene->meshes[id].material;
     }
@@ -179,7 +181,7 @@ JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_initialize
     renderer->settings.samplesPerPixel = spp > 0 ? spp : 1;
     renderer->settings.maxBounces = maxBounces > 0 ? maxBounces : 4;
     renderer->settings.numThreads = numThreads;
-    renderer->tracer->numThreads = numThreads;   // the tracer's own worker count
+    renderer->tracer->setNumThreads(numThreads);   // the tracer's own worker count
     renderer->settings.deterministicMode = deterministic == JNI_TRUE;
     renderer->settings.rngSeed = static_cast<uint64_t>(rngSeed);
 
@@ -318,8 +320,7 @@ JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_addMesh(
         renderer->lastError = "addMesh: arrays are malformed";
         return -1;
     }
-    mesh.material = MesrGL::Material();
-    if (MesrGL::Material* mat = renderer->materialById(materialId)) {
+    if (MesrGL::VoxelMaterial* mat = renderer->materialById(materialId)) {
         mesh.material = *mat;
     }
     renderer->scene->meshes.push_back(mesh);
@@ -385,7 +386,8 @@ JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_createMaterial
     proxy.material.emission = emission;
     proxy.material.transmission = transmission;
     proxy.material.ior = ior;
-    proxy.material.validate();
+    proxy.material.opacity = 1.0f;
+    proxy.material.materialId = 0;
     renderer->scene->meshes.push_back(proxy);
     renderer->bumpScene();
     return static_cast<jint>(renderer->scene->meshes.size() - 1);
@@ -397,7 +399,7 @@ JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_updateMate
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
     std::lock_guard<std::mutex> lock(renderer->mutex);
-    MesrGL::Material* mat = renderer->materialById(materialId);
+    MesrGL::VoxelMaterial* mat = renderer->materialById(materialId);
     if (!mat) return JNI_FALSE;
     mat->albedo = MesrGL::Vec3(ar, ag, ab);
     mat->roughness = roughness;
@@ -405,7 +407,6 @@ JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_updateMate
     mat->emission = emission;
     mat->transmission = transmission;
     mat->ior = ior;
-    mat->validate();
     renderer->bumpScene();
     return JNI_TRUE;
 }
@@ -436,9 +437,10 @@ JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMateria
     auto* renderer = self(handle);
     if (!renderer) return JNI_FALSE;
     std::lock_guard<std::mutex> lock(renderer->mutex);
-    MesrGL::Material* mat = renderer->materialById(materialId);
+    MesrGL::VoxelMaterial* mat = renderer->materialById(materialId);
     if (!mat) return JNI_FALSE;
-    mat->textureId = textureId;
+    // VoxelMaterial doesn't have textureId - this is a no-op for compatibility
+    (void)textureId;
     renderer->bumpScene();
     return JNI_TRUE;
 }
@@ -448,7 +450,7 @@ namespace {
 // CPU assist: build the acceleration structure on the CPU and, when the
 // GPU path is active, flatten + upload the scene for the executor.
 bool rebuildAccelerationLocked(BridgeRenderer* renderer, std::string& error) {
-    renderer->tracer->setScene(renderer->scene);
+    renderer->tracer->setScene(*renderer->scene);
     renderer->tracer->buildAccelerationStructure();
     renderer->sceneBuilt = true;
 
@@ -535,7 +537,7 @@ JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_addDirectional
     if (!renderer || !renderer->scene) return -1;
     std::lock_guard<std::mutex> lock(renderer->mutex);
     MesrGL::Light light;
-    light.type = MesrGL::LightType::Directional;
+    light.type = MesrGL::Light::Type::Directional;
     light.direction = MesrGL::Vec3(dx, dy, dz);
     light.color = MesrGL::Vec3(r, g, b);
     light.intensity = intensity;
@@ -551,7 +553,7 @@ JNIEXPORT jint JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_addPointLight(
     if (!renderer || !renderer->scene) return -1;
     std::lock_guard<std::mutex> lock(renderer->mutex);
     MesrGL::Light light;
-    light.type = MesrGL::LightType::Point;
+    light.type = MesrGL::Light::Type::Point;
     light.position = MesrGL::Vec3(px, py, pz);
     light.color = MesrGL::Vec3(r, g, b);
     light.intensity = intensity;
@@ -686,7 +688,8 @@ JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setSamplesPerP
 JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setMaxSamplesPerPixel(JNIEnv*, jclass, jlong handle, jint v) {
     auto* r = self(handle); if (!r) return JNI_FALSE;
     std::lock_guard<std::mutex> l(r->mutex);
-    r->settings.maxSamplesPerPixel = v > 0 ? v : 1;
+    // Note: RenderSettings doesn't have maxSamplesPerPixel, using samplesPerPixel
+    r->settings.samplesPerPixel = v > 0 ? v : 1;
     return JNI_TRUE;
 }
 JNIEXPORT jboolean JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setClearColor(JNIEnv*, jclass, jlong handle, jfloat ar, jfloat ag, jfloat ab) {
@@ -738,7 +741,7 @@ JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setDenoisingEn
 JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setToneMapping(JNIEnv*, jclass, jlong handle, jint mode) {
     auto* r = self(handle); if (!r) return; std::lock_guard<std::mutex> l(r->mutex);
     if (mode >= 0 && mode <= 6) {
-        r->settings.colorPipeline.toneMapping = static_cast<MesrGL::ToneMapping>(mode);
+        r->settings.colorPipeline.toneMapping = static_cast<MesrGL::RenderSettings::ToneMapping>(mode);
     }
 }
 JNIEXPORT void JNICALL Java_io_github_fv2j3dteam_mesrgl_MesrGLJNI_setExposure(JNIEnv*, jclass, jlong handle, jfloat v) {

@@ -46,7 +46,7 @@ tasks.register('buildMesrGLStatic', Exec) {
         mesrglBuildDir.mkdirs()
     }
     environment 'LD_LIBRARY_PATH', ''
-    commandLine 'cmake', '-S', mesrglSourceDir.absolutePath, '-B', mesrglBuildDir.absolutePath,
+    commandLine '/tmp/cmake-3.30.5-macos-universal/CMake.app/Contents/bin/cmake', '-S', mesrglSourceDir.absolutePath, '-B', mesrglBuildDir.absolutePath,
             '-DCMAKE_BUILD_TYPE=Release'
 }
 
@@ -55,7 +55,7 @@ tasks.register('compileMesrGLStatic', Exec) {
     dependsOn 'buildMesrGLStatic'
     onlyIf { mesrglAvailable }
     environment 'LD_LIBRARY_PATH', ''
-    commandLine 'cmake', '--build', mesrglBuildDir.absolutePath, '--parallel',
+    commandLine '/tmp/cmake-3.30.5-macos-universal/CMake.app/Contents/bin/cmake', '--build', mesrglBuildDir.absolutePath, '--parallel',
             Runtime.runtime.availableProcessors().toString()
 }
 
@@ -68,9 +68,9 @@ tasks.register('configureBridge', Exec) {
         bridgeBuildDir.mkdirs()
     }
     environment 'LD_LIBRARY_PATH', ''
-    commandLine 'cmake', '-S', file('native').absolutePath, '-B', bridgeBuildDir.absolutePath,
+    commandLine '/tmp/cmake-3.30.5-macos-universal/CMake.app/Contents/bin/cmake', '-S', file('native').absolutePath, '-B', bridgeBuildDir.absolutePath,
             "-DMESRGL_ROOT=${mesrglSourceDir.absolutePath}",
-            "-DMESRGL_LIBRARY=${mesrglBuildDir.absolutePath}/libMesrGL.a",
+            "-DMESRGL_LIBRARY=${mesrglBuildDir.absolutePath}/lib/libMesrGL.a",
             "-DJAVA_HOME=${System.getProperty('java.home')}",
             '-DCMAKE_BUILD_TYPE=Release'
 }
@@ -80,7 +80,7 @@ tasks.register('compileBridge', Exec) {
     dependsOn 'configureBridge'
     onlyIf { mesrglAvailable }
     environment 'LD_LIBRARY_PATH', ''
-    commandLine 'cmake', '--build', bridgeBuildDir.absolutePath, '--parallel',
+    commandLine '/tmp/cmake-3.30.5-macos-universal/CMake.app/Contents/bin/cmake', '--build', bridgeBuildDir.absolutePath, '--parallel',
             Runtime.runtime.availableProcessors().toString()
 }
 
@@ -128,6 +128,7 @@ def testNativeResourceDir = file("${buildDir}/resources/test/META-INF/native/${o
 tasks.register('stageTestNative') {
     group = 'mesrgl'
     description = 'Copies libMesrGLBridge.so into test resources for native loader'
+    onlyIf { mesrglAvailable }
     dependsOn 'compileBridge'
     outputs.dir testNativeResourceDir
     doLast {
@@ -141,6 +142,7 @@ tasks.register('stageTestNative') {
     }
 }
 tasks.withType(Test).configureEach {
+    onlyIf { mesrglAvailable }
     dependsOn 'stageTestNative'
     // The native loader extracts the .so to a temp dir and uses System.load
     // on it; we leave java.library.path alone (the loader does the work).

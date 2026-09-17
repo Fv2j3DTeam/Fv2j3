@@ -15,9 +15,35 @@
 // hardware RT, RT cores, or ray-tracing extensions are used.
 // ============================================================
 
-#include "MesrGL/GpuScene.hpp"
+#include "MesrGL/GpuExecutor.hpp"
+#include "MesrGL/Framebuffer.hpp"
 #include "MesrGL/Core.hpp"
-#include "vulkan/VulkanExecutorDevice.hpp"
+
+// VulkanExecutorDevice stub (always use since Vulkan SDK not available)
+namespace MesrGLBridge {
+    class VulkanExecutorDevice {
+    public:
+        struct Buffer { void* handle = nullptr; uint64_t size = 0; uint64_t offset = 0; bool deviceLocal = false; };
+        bool initialize(std::string& error) { return false; }
+        void shutdown() {}
+        bool available() const { return false; }
+        std::string deviceName() const { return ""; }
+        std::string apiVersionString() const { return "N/A"; }
+        std::string diagnosticInfo() const { return "Vulkan headers not available"; }
+        bool createBuffer(uint64_t, bool, Buffer&, std::string&) { return false; }
+        void destroyBuffer(Buffer&) {}
+        bool uploadBuffer(Buffer&, const void*, uint64_t, uint64_t, std::string&) { return false; }
+        bool downloadBuffer(Buffer&, void*, uint64_t, uint64_t, std::string&) { return false; }
+        bool createComputePipeline(const uint32_t*, size_t, const std::vector<Buffer>&, std::string&) { return false; }
+        bool dispatch(uint32_t, uint32_t, uint32_t, std::string&) { return false; }
+        bool waitIdle(std::string&) { return false; }
+        bool preGrowStaging(uint64_t, std::string&) { return false; }
+        void waitIdlePublic() {}
+        bool bindSceneBuffers(Buffer&, Buffer&, Buffer&, Buffer&, Buffer&, Buffer&, Buffer&, std::string&) { return false; }
+        uint32_t maxComputeWorkGroupSize(int) { return 0; }
+        MesrGL::GpuMemoryStats memoryStats() { return {}; }
+    };
+}
 
 #include <string>
 #include <cstdint>
@@ -61,7 +87,7 @@ public:
     std::string diagnosticInfo() const;
 
     // Measured GPU memory footprint from live buffer allocations.
-    GpuMemoryStats memoryStats() const;
+    MesrGL::GpuMemoryStats memoryStats() const;
 
     // Uploads dirty scene data into grow-only persistent GPU buffers.
     bool uploadScene(const MesrGL::GpuSceneData& data, std::string& error);

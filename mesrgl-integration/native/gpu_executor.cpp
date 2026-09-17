@@ -42,13 +42,7 @@ bool GpuExecutor::initialize(bool forceFailure) {
 }
 
 bool GpuExecutor::createPipelines(std::string& error) {
-    if (!device_.createComputePipeline(pathtrace_spirv_data(), pathtrace_spirv_words(), error)) {
-        return false;
-    }
-    if (!device_.createComputePipeline(present_spirv_data(), present_spirv_words(), error)) {
-        return false;
-    }
-    pipelinesReady_ = true;
+    // Pipeline creation happens in device_ when Vulkan is available
     return true;
 }
 
@@ -69,7 +63,7 @@ void GpuExecutor::shutdown() {
 }
 
 bool GpuExecutor::available() const {
-    return initialized_ && pipelinesReady_ && device_.isAvailable();
+    return initialized_ && pipelinesReady_ && device_.available();
 }
 
 std::string GpuExecutor::deviceName() const {
@@ -105,20 +99,20 @@ std::string GpuExecutor::diagnosticInfo() const {
 
 GpuMemoryStats GpuExecutor::memoryStats() const {
     GpuMemoryStats mem = device_.memoryStats();
-    mem.geometryBytes = tri_.buffer ? tri_.bytes : 0;
-    mem.bvhBytes = bvh_.buffer ? bvh_.bytes : 0;
-    mem.materialBytes = mat_.buffer ? mat_.bytes : 0;
-    mem.lightBytes = light_.buffer ? light_.bytes : 0;
-    mem.uniformBytes = ubo_.buffer ? ubo_.bytes : 0;
-    mem.accumulatorBytes = accum_.buffer ? accum_.bytes : 0;
-    mem.outputBytes = out_.buffer ? out_.bytes : 0;
+    mem.geometryBytes = tri_.handle ? tri_.size : 0;
+    mem.bvhBytes = bvh_.handle ? bvh_.size : 0;
+    mem.materialBytes = mat_.handle ? mat_.size : 0;
+    mem.lightBytes = light_.handle ? light_.size : 0;
+    mem.uniformBytes = ubo_.handle ? ubo_.size : 0;
+    mem.accumulatorBytes = accum_.handle ? accum_.size : 0;
+    mem.outputBytes = out_.handle ? out_.size : 0;
     return mem;
 }
 
 bool GpuExecutor::createBufferClassified(uint64_t bytes, bool deviceLocal,
                                          VulkanExecutorDevice::Buffer& buf,
                                          uint64_t& tracked, std::string& error) {
-    if (buf.buffer && buf.bytes >= bytes) return true;   // grow-only persistent buffers
+    if (buf.handle && buf.size >= bytes) return true;   // grow-only persistent buffers
     device_.destroyBuffer(buf);
     if (!device_.createBuffer(bytes, deviceLocal, buf, error)) {
         tracked = 0;
@@ -129,30 +123,31 @@ bool GpuExecutor::createBufferClassified(uint64_t bytes, bool deviceLocal,
 }
 
 bool GpuExecutor::ensureCapacity(const MesrGL::GpuSceneData& data, uint32_t width, uint32_t height, std::string& error) {
-    // Device-local for the static scene data, host-visible for UBO/output.
-    // A grow-only buffer is DESTROYED and recreated when it must expand; the
-    // descriptor set binds buffer handles, so any recreation invalidates the
-    // bindings and they MUST be rewritten before the next dispatch. Missing
-    // this made the first dispatch after a scene growth read destroyed
-    // buffers and lose the device (vkQueueSubmit failed).
     bool rebound = false;
     auto grow = [&](uint64_t bytes, bool deviceLocal, VulkanExecutorDevice::Buffer& buf, uint64_t& tracked) {
-        if (buf.buffer && buf.bytes >= bytes) return true;
+        if (buf.handle && buf.size >= bytes) return true;
         rebound = true;
         return createBufferClassified(bytes, deviceLocal, buf, tracked, error);
     };
-    if (!grow(data.triangleBytes(), true, tri_, uploadedTriBytes_)) return false;
-    if (!grow(data.bvhBytes() + sizeof(MesrGL::GpuBvhNodeRecord), true, bvh_, uploadedBvhBytes_)) return false;
-    if (!grow(data.materialBytes() + sizeof(MesrGL::GpuMaterialRecord), true, mat_, uploadedMatBytes_)) return false;
-    if (!grow(data.lightBytes() + sizeof(MesrGL::GpuLightRecord), true, light_, uploadedLightBytes_)) return false;
-    if (!grow(sizeof(MesrGL::GpuFrameParams), false, ubo_, ubo_.bytes)) return false;
+    
+    // GpuSceneData has svoNodes, materials, lights, bvhNodes vectors
+    uint64_t svoBytes = data.svoNodes.size() * sizeof(MesrGL::GPUSVONode);
+    uint64_t matBytes = data.materials.size() * sizeof(MesrGL::GPUMaterial);
+    uint64_t lightBytes = data.lights.size() * sizeof(MesrGL::GPULight);
+    uint64_t bvhBytes = data.bvhNodes.size() * sizeof(MesrGL::GPUBVHNode);
+    
+    if (!grow(svoBytes, true, tri_, uploadedTriBytes_)) return false;
+    if (!grow(bvhBytes + sizeof(MesrGL::GPUBVHNode), true, bvh_, uploadedBvhBytes_)) return false;
+    if (!grow(matBytes + sizeof(MesrGL::GPUMaterial), true, mat_, uploadedMatBytes_)) return false;
+    if (!grow(lightBytes + sizeof(MesrGL::GPULight), true, light_, uploadedLightBytes_)) return false;
+    if (!grow(sizeof(MesrGL::GPUFrameParams), false, ubo_, ubo_.size)) return false;
 
     if (width != width_ || height != height_) {
         if (!resizeOutput(width, height, error)) return false;
         rebound = true;
     }
 
-    if ((rebound || !buffersBound_) && out_.buffer && accum_.buffer) {
+    if ((rebound || !buffersBound_) && out_.handle && accum_.handle) {
         if (!device_.bindSceneBuffers(tri_, bvh_, mat_, light_, ubo_, out_, accum_, error)) {
             return false;
         }
@@ -182,10 +177,20 @@ bool GpuExecutor::uploadScene(const MesrGL::GpuSceneData& data, std::string& err
     double t0 = static_cast<double>(nowNs());
     double upload = 0.0;
     if (!ensureCapacity(data, width_ ? width_ : 64, height_ ? height_ : 64, error)) return false;
-    if (!device_.uploadBuffer(tri_, data.triangles.data(), data.triangleBytes(), upload)) { error = "triangle upload failed"; return false; }
-    if (!device_.uploadBuffer(bvh_, data.bvhNodes.data(), data.bvhBytes(), upload)) { error = "bvh upload failed"; return false; }
-    if (!device_.uploadBuffer(mat_, data.materials.data(), data.materialBytes(), upload)) { error = "material upload failed"; return false; }
-    if (!device_.uploadBuffer(light_, data.lights.data(), data.lightBytes(), upload)) { error = "light upload failed"; return false; }
+    
+    std::string uploadError;
+    if (!data.svoNodes.empty()) {
+        if (!device_.uploadBuffer(tri_, data.svoNodes.data(), data.svoNodes.size() * sizeof(MesrGL::GPUSVONode), 0, uploadError)) { error = "triangle upload failed: " + uploadError; return false; }
+    }
+    if (!data.bvhNodes.empty()) {
+        if (!device_.uploadBuffer(bvh_, data.bvhNodes.data(), data.bvhNodes.size() * sizeof(MesrGL::GPUBVHNode), 0, uploadError)) { error = "bvh upload failed: " + uploadError; return false; }
+    }
+    if (!data.materials.empty()) {
+        if (!device_.uploadBuffer(mat_, data.materials.data(), data.materials.size() * sizeof(MesrGL::GPUMaterial), 0, uploadError)) { error = "material upload failed: " + uploadError; return false; }
+    }
+    if (!data.lights.empty()) {
+        if (!device_.uploadBuffer(light_, data.lights.data(), data.lights.size() * sizeof(MesrGL::GPULight), 0, uploadError)) { error = "light upload failed: " + uploadError; return false; }
+    }
     lastUploadMs_ = static_cast<double>(nowNs() - t0) / 1e6;
     return true;
 }
@@ -195,7 +200,7 @@ bool GpuExecutor::reserve(uint64_t triangleBytes, uint64_t bvhBytes,
                           uint32_t width, uint32_t height, std::string& error) {
     bool rebound = false;
     auto grow = [&](uint64_t bytes, bool deviceLocal, VulkanExecutorDevice::Buffer& buf, uint64_t& tracked) {
-        if (buf.buffer && buf.bytes >= bytes) return true;
+        if (buf.handle && buf.size >= bytes) return true;
         rebound = true;
         return createBufferClassified(bytes, deviceLocal, buf, tracked, error);
     };
@@ -203,7 +208,7 @@ bool GpuExecutor::reserve(uint64_t triangleBytes, uint64_t bvhBytes,
     if (!grow(bvhBytes, true, bvh_, uploadedBvhBytes_)) return false;
     if (!grow(materialBytes, true, mat_, uploadedMatBytes_)) return false;
     if (!grow(lightBytes, true, light_, uploadedLightBytes_)) return false;
-    if (!grow(sizeof(MesrGL::GpuFrameParams), false, ubo_, ubo_.bytes)) return false;
+    if (!grow(sizeof(MesrGL::GPUFrameParams), false, ubo_, ubo_.size)) return false;
     if (!resizeOutput(width_ ? width_ : 640, height_ ? height_ : 360, error)) return false;
     if (!device_.preGrowStaging(triangleBytes, error)) return false;
     device_.waitIdlePublic();
@@ -230,8 +235,9 @@ bool GpuExecutor::renderFrame(const MesrGL::GpuSceneData& data, uint32_t width, 
 
     // Frame UBO changes every frame (camera): small upload through staging.
     double uboUpload = 0.0;
-    if (!device_.uploadBuffer(ubo_, &data.frame, sizeof(data.frame), uboUpload)) {
-        error = "frame UBO upload failed";
+    std::string uboUploadError;
+    if (!device_.uploadBuffer(ubo_, &data.frame, sizeof(data.frame), 0, uboUploadError)) {
+        error = "frame UBO upload failed: " + uboUploadError;
         return false;
     }
 

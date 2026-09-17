@@ -41,206 +41,27 @@ public final class InstallerEngine {
         static InstallProgress console() { return (name, percent, message) -> System.out.printf("[%3d%%] %-30s %s%n", percent, name, message); }
     }
 
-    // ---- Constants (merged from InstallerConstants) ----
-    private static final String MINECRAFT_VERSION = "1.12.2";
-    private static final String FV2J3_VERSION_ID = "Fv2j3-" + MINECRAFT_VERSION;
-    private static final String FV2J3_PROFILE_NAME = "Fv2j3 1.12.2";
-    private static final String FV2J3_MAIN_CLASS = "io.github.fv2j3dteam.loader.runtime.Bootstrap";
+    // ---- Constants - use InstallerConstants ---
+    private static final String MINECRAFT_VERSION = InstallerConstants.MINECRAFT_VERSION;
+    private static final String FV2J3_VERSION_ID = InstallerConstants.FV2J3_VERSION_ID;
+    private static final String FV2J3_PROFILE_NAME = InstallerConstants.FV2J3_PROFILE_NAME;
+    private static final String FV2J3_MAIN_CLASS = InstallerConstants.FV2J3_MAIN_CLASS;
 
-    // ---- MinecraftDetector (merged) ----
+    // ---- MinecraftDetector - use MinecraftDetector class ---
     public static Path detectMinecraftDirectory() {
-        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        Path detected = switch (true) {
-            case os.contains("win") -> detectWindows();
-            case os.contains("mac") -> detectMac();
-            default -> detectLinux();
-        };
-        return (detected != null && Files.isDirectory(detected)) ? detected.toAbsolutePath().normalize() : null;
+        return MinecraftDetector.detectMinecraftDirectory();
     }
 
-    private static Path detectWindows() {
-        String appData = System.getenv("APPDATA");
-        return (appData != null && !appData.isBlank()) ? Paths.get(appData, ".minecraft") : null;
-    }
-
-    private static Path detectMac() {
-        Path p = Paths.get(System.getProperty("user.home"), "Library", "Application Support", "minecraft");
-        return Files.isDirectory(p) ? p : null;
-    }
-
-    private static Path detectLinux() {
-        Path p = Paths.get(System.getProperty("user.home"), ".minecraft");
-        return Files.isDirectory(p) ? p : null;
-    }
-
-    public static MinecraftDirectory analyze(Path minecraftHome) {
-        if (minecraftHome == null || !Files.isDirectory(minecraftHome)) return MinecraftDirectory.notFound();
-        Path versionsDir = minecraftHome.resolve("versions");
-        boolean hasVersionsDir = Files.isDirectory(versionsDir);
-        List<Path> foundVersions = new ArrayList<>();
-        if (hasVersionsDir) {
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(versionsDir)) {
-                for (Path entry : stream) if (Files.isDirectory(entry)) foundVersions.add(entry);
-            } catch (IOException ignored) {}
-        }
-        boolean hasVersion112 = foundVersions.stream().anyMatch(p -> MINECRAFT_VERSION.equals(p.getFileName().toString()));
-        Path versionRoot = hasVersion112 ? versionsDir.resolve(MINECRAFT_VERSION) : null;
-        boolean hasVersionJson = versionRoot != null && Files.isRegularFile(versionRoot.resolve(MINECRAFT_VERSION + ".json"));
-        boolean hasVersionJar = versionRoot != null && Files.isRegularFile(versionRoot.resolve(MINECRAFT_VERSION + ".jar"));
-        return new MinecraftDirectory(
-            minecraftHome.toAbsolutePath().normalize(), hasVersionsDir, List.copyOf(foundVersions),
-            MINECRAFT_VERSION, hasVersion112, hasVersionJson, hasVersionJar);
+    public static MinecraftDetector.MinecraftDirectory analyze(Path minecraftHome) {
+        return MinecraftDetector.analyze(minecraftHome);
     }
 
     public static boolean isValidMinecraftInstallation(Path minecraftHome) {
-        MinecraftDirectory dir = analyze(minecraftHome);
-        return dir.hasVersionsDirectory() && dir.hasVersion112() && dir.hasVersionJson() && dir.hasVersionJar();
+        return MinecraftDetector.isValidMinecraftInstallation(minecraftHome);
     }
 
-    public record MinecraftDirectory(
-        Path path, boolean hasVersionsDirectory, List<Path> availableVersions, String targetVersion,
-        boolean hasVersion112, boolean hasVersionJson, boolean hasVersionJar) {
-        public static MinecraftDirectory notFound() {
-            return new MinecraftDirectory(null, false, List.of(), MINECRAFT_VERSION, false, false, false);
-        }
-        public boolean isValid() { return path != null && hasVersionsDirectory && hasVersion112 && hasVersionJson && hasVersionJar; }
-        public String describe() {
-            if (path == null) return "Minecraft directory not found";
-            StringBuilder sb = new StringBuilder();
-            sb.append("Minecraft directory: ").append(path).append("\n");
-            sb.append("Versions directory: ").append(hasVersionsDirectory ? "present" : "missing").append("\n");
-            sb.append("Available versions: ").append(availableVersions.size()).append("\n");
-            sb.append("Minecraft ").append(targetVersion).append(": ");
-            if (hasVersion112) {
-                sb.append("found");
-                if (hasVersionJson && hasVersionJar) sb.append(" (complete)");
-                else sb.append(" (incomplete)");
-            } else sb.append("not found");
-            return sb.toString();
-        }
-    }
-
-    // ---- InstallationPlan (merged) ----
-    public static final class InstallationPlan {
-        private final Path minecraftHome, fv2j3VersionDir, runtimeDir;
-        private final boolean extractRuntime, installClient, integrateLauncher, createModsDir;
-
-        private InstallationPlan(Builder b) {
-            this.minecraftHome = Objects.requireNonNull(b.minecraftHome, "minecraftHome");
-            this.fv2j3VersionDir = b.fv2j3VersionDir != null ? b.fv2j3VersionDir : minecraftHome.resolve("versions").resolve(FV2J3_VERSION_ID);
-            this.runtimeDir = b.runtimeDir != null ? b.runtimeDir : getRuntimeDir();
-            this.extractRuntime = b.extractRuntime;
-            this.installClient = b.installClient;
-            this.integrateLauncher = b.integrateLauncher;
-            this.createModsDir = b.createModsDir;
-        }
-
-        public static Builder builder(Path minecraftHome) { return new Builder(minecraftHome); }
-
-        public Path minecraftHome() { return minecraftHome; }
-        public Path fv2j3VersionDir() { return fv2j3VersionDir; }
-        public Path runtimeDir() { return runtimeDir; }
-        public boolean extractRuntime() { return extractRuntime; }
-        public boolean installClient() { return installClient; }
-        public boolean integrateLauncher() { return integrateLauncher; }
-        public boolean createModsDir() { return createModsDir; }
-        public Path fv2j3VersionJson() { return fv2j3VersionDir.resolve(FV2J3_VERSION_ID + ".json"); }
-        public Path modsDir() { return minecraftHome.resolve("mods"); }
-        public Path launcherProfilesJson() { return minecraftHome.resolve("launcher_profiles.json"); }
-        public Path runtimeLibsDir() { return runtimeDir.resolve("libs"); }
-
-        public String summary() {
-            return String.format("InstallationPlan[mc=%s, fv2j3VersionDir=%s, runtimeDir=%s, extractRuntime=%s, installClient=%s, integrateLauncher=%s, createModsDir=%s]",
-                minecraftHome, fv2j3VersionDir, runtimeDir, extractRuntime, installClient, integrateLauncher, createModsDir);
-        }
-
-        public static final class Builder {
-            private Path minecraftHome, fv2j3VersionDir, runtimeDir;
-            private boolean extractRuntime = true, installClient = true, integrateLauncher = true, createModsDir = true;
-            private Builder(Path minecraftHome) { this.minecraftHome = minecraftHome; }
-            public Builder fv2j3VersionDir(Path v) { this.fv2j3VersionDir = v; return this; }
-            public Builder runtimeDir(Path v) { this.runtimeDir = v; return this; }
-            public Builder extractRuntime(boolean v) { this.extractRuntime = v; return this; }
-            public Builder installClient(boolean v) { this.installClient = v; return this; }
-            public Builder integrateLauncher(boolean v) { this.integrateLauncher = v; return this; }
-            public Builder createModsDir(boolean v) { this.createModsDir = v; return this; }
-            public InstallationPlan build() { return new InstallationPlan(this); }
-        }
-    }
-
-    // ---- InstallationResult (merged) ----
-    public static final class InstallationResult {
-        private final boolean success;
-        private final Path minecraftHome, fv2j3VersionDir, fv2j3VersionJson, runtimeDir, modsDir;
-        private final boolean launcherIntegrated;
-        private final List<String> steps, warnings;
-        private final String failureReason;
-
-        private InstallationResult(Builder b) {
-            this.success = b.success;
-            this.minecraftHome = b.minecraftHome;
-            this.fv2j3VersionDir = b.fv2j3VersionDir;
-            this.fv2j3VersionJson = b.fv2j3VersionJson;
-            this.runtimeDir = b.runtimeDir;
-            this.modsDir = b.modsDir;
-            this.launcherIntegrated = b.launcherIntegrated;
-            this.steps = Collections.unmodifiableList(new ArrayList<>(b.steps));
-            this.warnings = Collections.unmodifiableList(new ArrayList<>(b.warnings));
-            this.failureReason = b.failureReason;
-        }
-
-        public static Builder builder() { return new Builder(); }
-        public static InstallationResult failure(String reason) { return new Builder().success(false).failureReason(reason).build(); }
-
-        public boolean success() { return success; }
-        public Path minecraftHome() { return minecraftHome; }
-        public Path fv2j3VersionDir() { return fv2j3VersionDir; }
-        public Path fv2j3VersionJson() { return fv2j3VersionJson; }
-        public Path runtimeDir() { return runtimeDir; }
-        public Path modsDir() { return modsDir; }
-        public boolean launcherIntegrated() { return launcherIntegrated; }
-        public List<String> steps() { return steps; }
-        public List<String> warnings() { return warnings; }
-        public String failureReason() { return failureReason; }
-
-        public String summary() {
-            StringBuilder sb = new StringBuilder();
-            sb.append("Installation ").append(success ? "SUCCEEDED" : "FAILED").append("\n");
-            sb.append("Minecraft directory: ").append(minecraftHome).append("\n");
-            sb.append("Fv2j3 version dir: ").append(fv2j3VersionDir).append("\n");
-            sb.append("Fv2j3 version JSON: ").append(fv2j3VersionJson).append("\n");
-            sb.append("Runtime directory: ").append(runtimeDir).append("\n");
-            sb.append("Mods directory: ").append(modsDir).append("\n");
-            sb.append("Launcher integrated: ").append(launcherIntegrated ? "yes" : "no").append("\n");
-            sb.append("Steps:\n");
-            for (String s : steps) sb.append("  - ").append(s).append("\n");
-            if (!warnings.isEmpty()) {
-                sb.append("Warnings:\n");
-                for (String w : warnings) sb.append("  ! ").append(w).append("\n");
-            }
-            if (failureReason != null) sb.append("Failure: ").append(failureReason).append("\n");
-            return sb.toString();
-        }
-
-        public static final class Builder {
-            private boolean success;
-            private Path minecraftHome, fv2j3VersionDir, fv2j3VersionJson, runtimeDir, modsDir;
-            private boolean launcherIntegrated;
-            private final List<String> steps = new ArrayList<>(), warnings = new ArrayList<>();
-            private String failureReason;
-            public Builder success(boolean v) { this.success = v; return this; }
-            public Builder minecraftHome(Path v) { this.minecraftHome = v; return this; }
-            public Builder fv2j3VersionDir(Path v) { this.fv2j3VersionDir = v; return this; }
-            public Builder fv2j3VersionJson(Path v) { this.fv2j3VersionJson = v; return this; }
-            public Builder runtimeDir(Path v) { this.runtimeDir = v; return this; }
-            public Builder modsDir(Path v) { this.modsDir = v; return this; }
-            public Builder launcherIntegrated(boolean v) { this.launcherIntegrated = v; return this; }
-            public Builder addStep(String s) { if (s != null) steps.add(s); return this; }
-            public Builder addWarning(String s) { if (s != null) warnings.add(s); return this; }
-            public Builder failureReason(String s) { this.failureReason = s; return this; }
-            public InstallationResult build() { return new InstallationResult(this); }
-        }
-    }
+    // ---- InstallationPlan - use InstallationPlan class ---
+    // ---- InstallationResult - use InstallationResult class ---
 
     // ---- BootstrapInstaller (merged) ----
     private static final String[] RUNTIME_JARS = {
@@ -515,7 +336,7 @@ public final class InstallerEngine {
         InstallationResult.Builder result = InstallationResult.builder()
             .minecraftHome(plan.minecraftHome()).runtimeDir(plan.runtimeDir());
         try {
-            MinecraftDirectory mcDir = analyze(plan.minecraftHome());
+            MinecraftDetector.MinecraftDirectory mcDir = analyze(plan.minecraftHome());
             if (!mcDir.isValid()) {
                 return result.success(false)
                     .failureReason("Minecraft 1.12.2 not found at " + plan.minecraftHome()

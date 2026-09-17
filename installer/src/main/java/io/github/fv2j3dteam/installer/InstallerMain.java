@@ -1,5 +1,6 @@
 package io.github.fv2j3dteam.installer;
 
+import io.github.fv2j3dteam.installer.core.InstallerConstants;
 import io.github.fv2j3dteam.installer.core.InstallerEngine;
 import io.github.fv2j3dteam.installer.ui.InstallerFrame;
 import org.slf4j.Logger;
@@ -12,25 +13,15 @@ import java.nio.file.Paths;
 public final class InstallerMain {
     private static final Logger LOG = LoggerFactory.getLogger(InstallerMain.class);
 
-    // ---- Constants (merged from InstallerConstants) ----
-    public static final String MINECRAFT_VERSION = "1.12.2";
-    public static final String FV2J3_VERSION_ID = "Fv2j3-" + MINECRAFT_VERSION;
-    public static final String FV2J3_PROFILE_NAME = "Fv2j3 1.12.2";
-    public static final String FV2J3_MAIN_CLASS = "io.github.fv2j3dteam.loader.runtime.Bootstrap";
-    public static final String FV2J3_INSTALLER_VERSION = readVersion();
+    // Use constants from InstallerConstants
+    public static final String MINECRAFT_VERSION = InstallerConstants.MINECRAFT_VERSION;
+    public static final String FV2J3_VERSION_ID = InstallerConstants.FV2J3_VERSION_ID;
+    public static final String FV2J3_PROFILE_NAME = InstallerConstants.FV2J3_PROFILE_NAME;
+    public static final String FV2J3_MAIN_CLASS = InstallerConstants.FV2J3_MAIN_CLASS;
+    public static final String FV2J3_INSTALLER_VERSION = InstallerConstants.FV2J3_INSTALLER_VERSION;
 
     public static Path getRuntimeDir() {
-        String property = System.getProperty("fv2j3.installer.runtime.dir");
-        if (property != null && !property.isBlank()) {
-            return Paths.get(property).toAbsolutePath().normalize();
-        }
-        return Paths.get(System.getProperty("user.home"), ".fv2j3", "installer-runtime").toAbsolutePath();
-    }
-
-    private static String readVersion() {
-        String version = InstallerMain.class.getPackage().getImplementationVersion();
-        if (version != null && !version.isBlank()) return version;
-        return System.getProperty("fv2j3.installer.version", "0.1.0-SNAPSHOT");
+        return InstallerConstants.getRuntimeDir();
     }
 
     private InstallerMain() {}
