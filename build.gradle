@@ -758,17 +758,23 @@ tasks.register('push') {
         if (upstreamProc.exitValue() != 0) {
             logger.lifecycle("No upstream tracking branch for master; setting origin/master as upstream.")
             def result = ['git', 'push', '--set-upstream', 'origin', 'master'].execute()
-            result.waitFor()
-            result.text.eachLine { logger.lifecycle(it) }
+            def output = new StringBuilder()
+            def error = new StringBuilder()
+            result.waitForProcessOutput(output, error)
+            output.toString().eachLine { logger.lifecycle(it) }
+            error.toString().eachLine { logger.lifecycle(it) }
             if (result.exitValue() != 0) {
-                throw new GradleException("Failed to push and set upstream: ${result.text}")
+                throw new GradleException("Failed to push and set upstream: ${error}")
             }
         } else {
             def result = ['git', 'push', 'origin', 'master'].execute()
-            result.waitFor()
-            result.text.eachLine { logger.lifecycle(it) }
+            def output = new StringBuilder()
+            def error = new StringBuilder()
+            result.waitForProcessOutput(output, error)
+            output.toString().eachLine { logger.lifecycle(it) }
+            error.toString().eachLine { logger.lifecycle(it) }
             if (result.exitValue() != 0) {
-                throw new GradleException("Failed to push: ${result.text}")
+                throw new GradleException("Failed to push: ${error}")
             }
         }
         logger.lifecycle("Pushed master to origin.")
