@@ -7,7 +7,7 @@ version = '1.0.0'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(26)
+        languageVersion = JavaLanguageVersion.of(27)
     }
 }
 
@@ -20,6 +20,6 @@ dependencies {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.release = 26
+    options.release = 27
     options.encoding = 'UTF-8'
 }

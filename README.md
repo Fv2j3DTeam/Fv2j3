@@ -5,7 +5,7 @@ Fv2j3 is an independent Minecraft 1.12.2 Mod Loader providing a complete modding
 ## Version
 
 - Minecraft: **1.12.2**
-- Java: **26**
+- Java: **27**
 - Fv2j3: **0.1.0-SNAPSHOT**
 
 ## Features
@@ -234,9 +234,9 @@ Result: PASS
 | `./gradlew stressTest` | Run 310-mod stress test |
 | `./gradlew testMdk` | Verify MDK structure |
 
-## Java 26
+## Java 27
 
-Fv2j3 targets Java 26 and maintains a modern JDK toolchain while treating Minecraft 1.12.2 as a compatibility boundary.
+Fv2j3 targets Java 27 and maintains a modern JDK toolchain while treating Minecraft 1.12.2 as a compatibility boundary.
 
 ## License
 

@@ -29,15 +29,15 @@ subprojects {
 
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(26)
+            languageVersion = JavaLanguageVersion.of(27)
         }
-        sourceCompatibility = JavaVersion.VERSION_26
-        targetCompatibility = JavaVersion.VERSION_26
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
     }
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
-        options.release = 26
+        options.release = 27
     }
 
     tasks.withType(Test).configureEach {
